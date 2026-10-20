@@ -24,6 +24,10 @@ from pathlib import Path
 
 LineCallback = Callable[[str], "Awaitable[None] | None"]
 
+# asyncio's default 64 KiB line limit is too small for e.g. `ioreg -w0`, whose
+# property lines can be hundreds of KiB.
+STREAM_LIMIT = 16 * 1024 * 1024
+
 
 @dataclass
 class ProcessResult:
@@ -88,6 +92,7 @@ async def run_command(
             stderr=asyncio.subprocess.STDOUT,
             env={**os.environ, **(env or {})},
             start_new_session=True,
+            limit=STREAM_LIMIT,
         )
     except FileNotFoundError as e:
         result.error = f"executable not found: {argv[0]} ({e})"
@@ -106,7 +111,12 @@ async def run_command(
     async def pump() -> None:
         assert proc.stdout is not None
         while True:
-            raw = await proc.stdout.readline()
+            try:
+                raw = await proc.stdout.readline()
+            except ValueError:
+                # A single line longer than STREAM_LIMIT: take what is buffered as one chunk
+                # instead of failing the whole command.
+                raw = await proc.stdout.read(STREAM_LIMIT)
             if not raw:
                 break
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
