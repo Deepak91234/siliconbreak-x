@@ -1,0 +1,28 @@
+{
+  "title": "8-LED chase with speed, direction and reset",
+  "summary": "A single lit LED moves along LED0-LED7 towards higher LEDs at 2 steps per second, wrapping around. BTNU held: 6 steps per second. SW0 up reverses the direction. BTNC restarts the chase from LED0.",
+  "inputs": [
+    {"name": "speed_btn", "port": "btnU", "debounce_ms": 10, "description": "Hold for 6 steps/s"},
+    {"name": "dir_sw", "port": "sw", "index": 0, "debounce_ms": 10, "description": "Up = move towards LED0"},
+    {"name": "reset_btn", "port": "btnC", "debounce_ms": 10, "description": "Restart from LED0"}
+  ],
+  "outputs": [
+    {"name": "leds", "port": "led", "indices": [0, 1, 2, 3, 4, 5, 6, 7], "description": "Chase pattern"}
+  ],
+  "behavior": {
+    "family": "led_pattern",
+    "output": "leds",
+    "pattern": "chase",
+    "direction": "left",
+    "direction_control": {"input": "dir_sw", "high_means": "down"},
+    "rate_modes": [
+      {"name": "fast", "hz": 6, "when_input": "speed_btn", "when_level": 1},
+      {"name": "normal", "hz": 2}
+    ],
+    "reset_input": "reset_btn"
+  },
+  "assumptions": [
+    "The chase starts on LED0 after configuration",
+    "'left' means towards higher LED numbers; SW0 up (direction 'down') moves towards LED0"
+  ]
+}

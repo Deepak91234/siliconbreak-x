@@ -1,0 +1,20 @@
+{
+  "title": "8-LED blinker with fast mode",
+  "summary": "LED0-LED7 blink together at 1 Hz (50% duty); twice as fast (2 Hz) while switch 0 is up.",
+  "inputs": [
+    {"name": "fast_sw", "port": "sw", "index": 0, "debounce_ms": 10, "description": "Up for 2 Hz blinking"}
+  ],
+  "outputs": [
+    {"name": "leds", "port": "led", "indices": [0, 1, 2, 3, 4, 5, 6, 7], "description": "All blink together"}
+  ],
+  "behavior": {
+    "family": "blinker",
+    "output": "leds",
+    "pattern": "together",
+    "rate_modes": [
+      {"name": "fast", "hz": 2, "when_input": "fast_sw", "when_level": 1},
+      {"name": "slow", "hz": 1}
+    ]
+  },
+  "assumptions": ["LEDs start off after configuration", "SW0 is debounced for 10 ms"]
+}

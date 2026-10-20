@@ -1,0 +1,24 @@
+{
+  "title": "Switches mirrored on LEDs",
+  "summary": "LED0-LED7 show the positions of switches SW0-SW7.",
+  "inputs": [
+    {"name": "s0", "port": "sw", "index": 0, "debounce_ms": 10},
+    {"name": "s1", "port": "sw", "index": 1, "debounce_ms": 10},
+    {"name": "s2", "port": "sw", "index": 2, "debounce_ms": 10},
+    {"name": "s3", "port": "sw", "index": 3, "debounce_ms": 10},
+    {"name": "s4", "port": "sw", "index": 4, "debounce_ms": 10},
+    {"name": "s5", "port": "sw", "index": 5, "debounce_ms": 10},
+    {"name": "s6", "port": "sw", "index": 6, "debounce_ms": 10},
+    {"name": "s7", "port": "sw", "index": 7, "debounce_ms": 10}
+  ],
+  "outputs": [
+    {"name": "leds", "port": "led", "indices": [0, 1, 2, 3, 4, 5, 6, 7], "description": "LEDi follows SWi"}
+  ],
+  "behavior": {
+    "family": "led_pattern",
+    "output": "leds",
+    "pattern": "mirror_inputs",
+    "source_inputs": ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]
+  },
+  "assumptions": ["Switches are debounced for 10 ms, so LEDs follow within about 10 ms"]
+}

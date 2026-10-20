@@ -1,0 +1,29 @@
+{
+  "title": "4-bit variable-speed down-counter with reset",
+  "summary": "Demo 1 modified: 4-bit binary down-counter on LED0-LED3. Decrements once per second; three times per second while BTNU is held. Holding BTNC resets the count to 0.",
+  "inputs": [
+    {"name": "speed_btn", "port": "btnU", "debounce_ms": 10, "description": "Hold for 3x speed"},
+    {"name": "reset_btn", "port": "btnC", "debounce_ms": 10, "description": "Hold to reset the count to 0"}
+  ],
+  "outputs": [
+    {"name": "count", "port": "led", "indices": [0, 1, 2, 3], "description": "Counter value, LSB on LED0"}
+  ],
+  "behavior": {
+    "family": "counter",
+    "output": "count",
+    "direction": "down",
+    "rate_modes": [
+      {"name": "fast", "hz": 3, "when_input": "speed_btn", "when_level": 1},
+      {"name": "normal", "hz": 1}
+    ],
+    "reset_input": "reset_btn",
+    "reset_value": 0,
+    "initial_value": 0,
+    "wrap": true
+  },
+  "assumptions": [
+    "Counter starts at 0 after configuration and wraps from 0 to 15 when counting down",
+    "BTNU and BTNC are debounced for 10 ms",
+    "While BTNC is held the count stays at 0; counting resumes one full period after release"
+  ]
+}

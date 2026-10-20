@@ -1,0 +1,28 @@
+{
+  "title": "Traffic light with pedestrian request",
+  "summary": "Car lights on LED0 (green), LED1 (yellow), LED2 (red): green 4 s, yellow 1 s, red 3 s, repeat. Pressing BTNL requests a crossing: after the next red phase a 3 s 'walk' phase follows (red plus the walk light on LED3). BTNC restarts the cycle at green.",
+  "inputs": [
+    {"name": "walk_btn", "port": "btnL", "debounce_ms": 10, "description": "Pedestrian crossing request"},
+    {"name": "reset_btn", "port": "btnC", "debounce_ms": 10, "description": "Restart at green"}
+  ],
+  "outputs": [
+    {"name": "lights", "port": "led", "indices": [0, 1, 2, 3], "description": "bit0 green, bit1 yellow, bit2 red, bit3 walk"}
+  ],
+  "behavior": {
+    "family": "traffic_light",
+    "output": "lights",
+    "states": [
+      {"name": "green", "duration_s": 4, "lights": 1},
+      {"name": "yellow", "duration_s": 1, "lights": 2},
+      {"name": "red", "duration_s": 3, "lights": 4}
+    ],
+    "request_input": "walk_btn",
+    "request_after": "red",
+    "request_state": {"name": "walk", "duration_s": 3, "lights": 12},
+    "reset_input": "reset_btn"
+  },
+  "assumptions": [
+    "The light starts green after configuration",
+    "A request is remembered until it is served; the walk phase keeps the car light red"
+  ]
+}
