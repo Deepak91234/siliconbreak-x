@@ -1,0 +1,21 @@
+{
+  "title": "4-bit variable-speed counter",
+  "summary": "4-bit binary up-counter on LED0-LED3. Increments once per second; three times per second while BTNU is held.",
+  "inputs": [
+    {"name": "speed_btn", "port": "btnU", "debounce_ms": 10, "description": "Hold for 3x speed"}
+  ],
+  "outputs": [
+    {"name": "count", "port": "led", "indices": [0, 1, 2, 3], "description": "Counter value, LSB on LED0"}
+  ],
+  "behavior": {
+    "family": "counter",
+    "output": "count",
+    "direction": "up",
+    "rate_modes": [
+      {"name": "fast", "hz": 3, "when_input": "speed_btn", "when_level": 1},
+      {"name": "normal", "hz": 1}
+    ],
+    "wrap": true
+  },
+  "assumptions": ["Counter starts at 0 after configuration", "BTNU is debounced for 10 ms"]
+}

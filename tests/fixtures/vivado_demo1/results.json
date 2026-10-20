@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "failed_stage": "",
+  "message": "",
+  "vivado_version": "2023.2",
+  "metrics": {
+    "critical_warnings": "0",
+    "errors": "0",
+    "ports_total": "50",
+    "ports_without_loc": "0",
+    "synth_critical_warnings": "0",
+    "unrouted_nets": "0",
+    "whs_ns": "0.131",
+    "wns_ns": "5.239"
+  }
+}

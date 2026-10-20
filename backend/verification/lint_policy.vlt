@@ -1,0 +1,8 @@
+`verilator_config
+// CircuitLoop lint policy (applied to every lint and simulation build).
+//
+// PROCASSINIT: Xilinx 7-series flip-flops are loaded from their declaration
+// initializer (INIT attribute) by GSR at configuration time, so
+// `reg q = 1'b0;` is the intended power-on-value idiom on the Basys 3.
+// Every other -Wall warning stays enabled and is reported.
+lint_off -rule PROCASSINIT

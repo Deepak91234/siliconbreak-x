@@ -1,0 +1,14 @@
+[project]
+name = "circuitloop"
+version = "0.1.0"
+description = "Autonomous AI FPGA engineer for the Digilent Basys 3"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "verilator: needs the verilator binary",
+    "vivado: runs a real Vivado build in the Docker container (slow, opt-in with --run-vivado)",
+    "hardware: needs a connected Basys 3 (opt-in with --run-hardware)",
+]

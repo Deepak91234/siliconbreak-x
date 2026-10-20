@@ -1,0 +1,15 @@
+# secrets
+.env
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# node
+frontend/node_modules/
+frontend/dist/
+# run artifacts (bitstreams, logs, waveforms, sqlite db, webcam evidence)
+runs/*
+!runs/.gitkeep
+# misc
+.DS_Store
