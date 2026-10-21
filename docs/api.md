@@ -90,13 +90,15 @@ endpoints or from WebSocket events — the frontend never invents progress.
 | GET | `/api/runs/{id}` | | `Run` |
 | GET | `/api/runs/{id}/events?after=0&limit=2000` | | `[Event]` |
 | POST | `/api/runs/{id}/cancel` | | `Run` |
+| GET | `/api/faults` | | `[{"name","description","families"}]` core defects available to the fault-injection test mode |
 | GET | `/api/hardware` | | `HardwareStatus` (contracts §C) |
 | POST | `/api/hardware/detect` | | `HardwareStatus` after a JTAG detect |
 | POST | `/api/hardware/stop-xvcd` | `{"pid": 123}` | `Approval` (kind `stop_xvcd`) |
+| GET | `/api/vision/sessions?revision_id=` | | `[VisionSessionState]` live sessions in this backend process |
 | POST | `/api/vision/sessions` | `{"revision_id": "r_3"}` | `VisionSessionState` |
 | GET | `/api/vision/sessions/{id}` | | `VisionSessionState` |
 | PUT | `/api/vision/sessions/{id}/roi` | `{"leds": [LedRoi]}` | `VisionSessionState` |
-| POST | `/api/vision/sessions/{id}/auto-roi` | `{"box": [x,y,w,h], "count": 4, "first_led": 0}` + last frame on server | `VisionSessionState` |
+| POST | `/api/vision/sessions/{id}/auto-roi` | `{"box": [x,y,w,h], "count": 4, "first_led": 0}` — box normalised to 0..1 of the frame; uses the last frame received on the vision socket | `VisionSessionState` (422 for an invalid box/count/LED range) |
 | POST | `/api/vision/sessions/{id}/phase` | `{"action": "start", "phase_id": "..."}` or `{"action": "end"}` | `VisionSessionState` |
 | POST | `/api/vision/sessions/{id}/finish` | | `VerificationResult` (also stored on the revision; updates stage `verify`) |
 | GET | `/api/files/{path}` | | raw file under `runs/` (path-guarded): bitstreams, reports, VCD, evidence |
@@ -115,6 +117,8 @@ endpoints or from WebSocket events — the frontend never invents progress.
 {"id": "v_1", "revision_id": "r_3", "status": "setup" | "running" | "finished",
  "plan": [PhasePlan], "current_phase": "O-RATE-normal" | null, "roi": RoiConfig | null,
  "live": {"fps": 29.8, "frames": 1234, "quality": {...}}, "result": VerificationResult | null}
+// The backend also returns optional extras (spec_title, phase_elapsed_s, phases[], live.states,
+// live.levels, live.recorded_frames, live.rejected_frames, live.calibration).
 ```
 
 ## WebSockets

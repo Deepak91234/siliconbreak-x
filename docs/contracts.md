@@ -124,7 +124,10 @@ async def run_simulation_suite(
     spec: DesignSpec, rtl_files: list[Path], workspace: Path,
     emit: Callable[[str, dict], Awaitable[None]] | None = None,   # emit("log", {"line": ...}) / emit("scenario", {...})
     clk_hz: int | None = None,                                      # default get_settings().sim_clk_hz
+    *, fail_fast: bool = False, waveforms: bool = True,             # used by the mutation tests
 ) -> SimulationReport
+# report.lint is keyed "real" and "sim"; a design compile error in the harness build gives
+# status "failed" with diagnostics.build_errors (and empty lint_errors).
 # rtl_files = [basys3_top.v, cl_core.v]; runner adds library_paths(). Lint runs at real AND sim params.
 
 # waveform.py

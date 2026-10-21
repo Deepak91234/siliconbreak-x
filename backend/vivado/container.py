@@ -190,14 +190,15 @@ async def _probe_inside(env: VivadoEnvironment, s: Settings) -> None:
     probe_dir = s.vivado_workspace_host / ".probe"
     try:
         probe_dir.mkdir(parents=True, exist_ok=True)
-        (probe_dir / "token").write_text(token)
+        # one file per probe: concurrent detect() calls must not overwrite each other's token
+        (probe_dir / f"token-{token}").write_text(token)
     except OSError as e:
         env.problems.append(f"cannot write shared workspace {probe_dir}: {e}")
         return
 
     script = (
         f"ls -1d {home}/Xilinx/Vivado/*/ 2>/dev/null | xargs -n1 basename; "
-        f"echo '---'; cat {s.vivado_workspace_container}/.probe/token 2>/dev/null; echo; "
+        f"echo '---'; cat {s.vivado_workspace_container}/.probe/token-{token} 2>/dev/null; echo; "
         "echo '---'; ps -eo args 2>/dev/null | grep -v grep | grep -E 'lnx64.o/(vivado|hw_server)' || true"
     )
     r = await container_exec(env.active_container, script, timeout_s=30, settings=s)
@@ -208,6 +209,10 @@ async def _probe_inside(env: VivadoEnvironment, s: Settings) -> None:
     versions = [v.strip() for v in sections[0].split() if _VERSION_RE.match(v.strip())]
     env.vivado_versions = versions
     env.workspace_shared = len(sections) > 1 and sections[1].strip() == token
+    try:
+        (probe_dir / f"token-{token}").unlink()
+    except OSError:
+        pass
     if not env.workspace_shared:
         env.problems.append("shared workspace round-trip failed (bind mount mismatch?)")
     procs = sections[2].splitlines() if len(sections) > 2 else []

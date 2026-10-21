@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Theme tokens as "r g b" triplets so Tailwind's <alpha-value> works
+ * (tailwind.config.ts). Light values on :root, dark values under .dark
+ * (index.html starts in dark; App.tsx toggles the class).
+ */
+:root {
+  --bg: 246 247 249;
+  --panel: 255 255 255;
+  --raised: 240 243 247;
+  --sunken: 234 238 243;
+  --line: 214 220 228;
+  --fg: 15 23 42;
+  --muted: 71 85 105;
+  --faint: 117 130 150;
+  --accent: 2 132 199;
+  --ok: 5 150 105;
+  --bad: 220 38 38;
+  --warn: 180 115 0;
+  --info: 37 99 235;
+  --idle: 117 130 150;
+  --violet: 124 58 237;
+  --orange: 234 88 12;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 10 14 19;
+  --panel: 16 21 28;
+  --raised: 25 31 40;
+  --sunken: 7 10 14;
+  --line: 38 46 57;
+  --fg: 226 232 240;
+  --muted: 148 163 184;
+  --faint: 100 116 139;
+  --accent: 56 189 248;
+  --ok: 52 211 153;
+  --bad: 248 113 113;
+  --warn: 251 191 36;
+  --info: 96 165 250;
+  --idle: 100 116 139;
+  --violet: 167 139 250;
+  --orange: 251 146 60;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line)) transparent;
+}
+
+/* highlight.js tokens (lib/highlight.ts emits hljs-* spans). */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag {
+  color: rgb(var(--violet));
+}
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: rgb(var(--info));
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol {
+  color: rgb(var(--orange));
+}
+.hljs-string,
+.hljs-regexp {
+  color: rgb(var(--ok));
+}
+.hljs-comment,
+.hljs-quote {
+  color: rgb(var(--faint));
+  font-style: italic;
+}
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+  color: rgb(var(--warn));
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: rgb(var(--accent));
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: rgb(var(--fg));
+}
