@@ -174,10 +174,14 @@ async def list_processes(timeout_s: float = 10.0) -> list[ProcInfo]:
     ps = _bin("/bin/ps", "ps")
     if not ps:
         raise RuntimeError("ps not found")
-    r = await run_command([ps, "-axo", "pid,ppid,command"], timeout_s=timeout_s)
-    if not r.ok:
-        raise RuntimeError(f"ps failed: {r.error or r.text[-200:]}")
-    return parse_ps(r.text)
+    # One retry: a probe that straddles macOS sleep/wake overruns its timeout even though
+    # nothing is wrong, and the next attempt succeeds immediately.
+    for attempt in (1, 2):
+        r = await run_command([ps, "-axo", "pid,ppid,command"], timeout_s=timeout_s)
+        if r.ok:
+            return parse_ps(r.text)
+    why = r.error or ("timed out" if r.timed_out else f"exit code {r.exit_code}")
+    raise RuntimeError(f"ps failed twice ({why})")
 
 
 async def list_listeners(port: int = XVC_PORT, timeout_s: float = 10.0) -> list[dict]:

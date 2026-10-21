@@ -234,6 +234,8 @@ class HardwareManager:
                     await bus.emit("hardware.updated", hardware=st.model_dump())
             except asyncio.CancelledError:
                 raise
+            except RuntimeError as e:  # transient probe failure (e.g. across sleep/wake): retry next tick
+                log.warning("hardware monitor: %s; retrying in %.0f s", e, interval_s)
             except Exception:
                 log.exception("hardware monitor iteration failed")
             await asyncio.sleep(interval_s)
