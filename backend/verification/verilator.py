@@ -196,6 +196,8 @@ async def build_harness(
         "-Wno-fatal", "-Wno-lint", "-Wno-style",
         # Homebrew's verilator bottle does not pass a C++ standard to Apple clang 15
         "-CFLAGS", "-std=c++17",
+        # the bottle also passes -Wno-<flag> options Apple clang 15 does not know; silence that noise
+        "-CFLAGS", "-Wno-unknown-warning-option",
         "--x-assign", "unique", "--x-initial", "unique",
         "--top-module", TOP, "-Mdir", str(obj_dir), "-o", "Vsim",
         str(LINT_POLICY),
