@@ -149,3 +149,12 @@ async def test_live_status_is_honest():
     if ofl.binary():
         d = await ofl.detect()
         assert d.state == "no_board" and not d.ok
+
+
+def test_hwserver_no_active_target_is_no_board():
+    # Captured verbatim from vivado_container on this Mac (Vivado 2023.2, no board, xvcd not serving).
+    lines = ["CL_HW state error",
+             'CL_HW message ERROR: [Labtoolstcl 44-494] There is no active target available for server at localhost:3121. |  '
+             'Targets(s) ", jsn-XVC-host.docker.internal:2542" may be locked by another hw_server. | ']
+    m = hwserver.parse_output(lines)
+    assert hwserver._NO_ACTIVE_TARGET.search(m["message"])

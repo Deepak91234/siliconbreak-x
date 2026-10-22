@@ -33,6 +33,8 @@ from backend.vivado import container as ctr
 HW_SERVER_URL = "localhost:3121"
 _MARK = re.compile(r"^CL_HW\s+(\S+)\s*(.*)$")
 _STARTUP_HIGH = re.compile(r"End of startup status:\s*HIGH", re.I)
+# Real Vivado 2023.2 message when the XVC target exists but no board is behind it (captured on this Mac).
+_NO_ACTIVE_TARGET = re.compile(r"Labtoolstcl 44-494|no active target available", re.I)
 
 TCL = r"""# CircuitLoop hw_server adapter (generated). Volatile programming only.
 set cl_mode [lindex $argv 0]
@@ -40,11 +42,17 @@ set cl_bit  [lindex $argv 1]
 proc out {k v} { puts "CL_HW $k $v"; flush stdout }
 if {[catch {
     open_hw_manager
-    connect_hw_server -url %(url)s -allow_non_jtag
-    refresh_hw_server
-    set targets [get_hw_targets -quiet *]
+    if {[catch {connect_hw_server -url %(url)s -allow_non_jtag} e]} {
+        if {[string match "*44-494*" $e]} { out state no_board; out message "hw_server has no active JTAG target: the XVC bridge (xvcd on macOS) is not serving a board - is the Basys 3 plugged in?"; exit 3 }
+        error $e
+    }
+    # With no board, the XVC target exists but is inactive and Vivado raises
+    # "There is no active target available" instead of returning an empty list.
+    set targets {}
+    if {[catch {refresh_hw_server} e]} { out refresh_note [string map {"\n" " | "} $e] }
+    if {[catch {set targets [get_hw_targets -quiet *]} e]} { out targets_note [string map {"\n" " | "} $e]; set targets {} }
     out targets [llength $targets]
-    if {[llength $targets] == 0} { out state no_board; out message "hw_server sees no JTAG target (is xvcd running and the board plugged in?)"; exit 3 }
+    if {[llength $targets] == 0} { out state no_board; out message "hw_server has no active JTAG target: the XVC bridge (xvcd on macOS) is not serving a board - is the Basys 3 plugged in?"; exit 3 }
     current_hw_target [lindex $targets 0]
     open_hw_target
     set devs [get_hw_devices -quiet]
@@ -159,6 +167,8 @@ async def detect(timeout_s: float = 240.0) -> DetectResult:
         state, msg = "unsupported", f"device idcode {idcode} is not the Basys 3's xc7a35t"
     elif st in ("no_board", "unsupported"):
         state, msg = st, m.get("message", st)
+    elif _NO_ACTIVE_TARGET.search(m.get("message", "")):
+        state, msg = "no_board", "hw_server has no active JTAG target (XVC bridge not serving a board)"
     else:
         state, msg = "error", m.get("message") or "; ".join(m.get("errors", [])) or "hw_server session failed"
     return DetectResult(adapter="hw_server", ok=state == "connected", state=state, idcode=idcode,
