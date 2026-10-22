@@ -738,30 +738,45 @@ class Orchestrator:
         await self._program_and_verify(ctx, rev)
 
     # ================================================================ vision results
-    async def record_verification(self, revision_id: str, result: dict) -> None:
+    async def record_verification(self, revision_id: str, result: dict) -> dict:
+        """Store a camera verdict for a revision and fold it into that revision's latest run.
+
+        The camera cannot know which bitstream is on the board, so the verdict only
+        upgrades a run to 'passed'/'failed' when CircuitLoop itself confirmed
+        programming this revision. Otherwise it is stored with
+        programmed_by_circuitloop=False and the run status is left unchanged.
+        """
         rev = store.get_revision(revision_id)
         if rev is None:
-            return
+            return result
         status = result.get("status")
-        rev = store.update_revision(revision_id, verification=result,
-                                    status={"passed": "verified", "failed": "verify_failed"}.get(status, rev["status"]))
+        confirmed = rev["status"] in ("programmed", "verified", "verify_failed")
+        result = {**result, "programmed_by_circuitloop": confirmed}
+        new_status = {"passed": "verified", "failed": "verify_failed"}.get(status) if confirmed else None
+        rev = store.update_revision(revision_id, verification=result, **({"status": new_status} if new_status else {}))
         run = store.latest_run_for_revision(revision_id)
         if run is None:
-            return
+            return result
         ctx = RunContext(run["id"], run["project_id"], run.get("options") or {})
+        summary = result.get("summary", "")
+        if not confirmed:
+            summary = "board programming not confirmed by CircuitLoop for this revision; " + summary
         await ctx.stage("verify", {"passed": "passed", "failed": "failed", "inconclusive": "inconclusive"}.get(status, "unavailable"),
-                        result.get("summary", "")[:200], {"result": result})
+                        summary[:200], {"result": result})
         await bus.emit("revision.updated", run_id=run["id"], project_id=run["project_id"], revision=store.revision_summary(rev))
-        if run["status"] in ("waiting", "passed_sim_only", "passed", "failed"):
+        if confirmed and run["status"] in ("waiting", "passed_sim_only"):
             final = {"passed": "passed", "failed": "failed"}.get(status, "passed_sim_only")
             await ctx.set_status(final, finished=True)
         reqs = result.get("requirements", [])
         observed = [r["id"] for r in reqs if r.get("physical_status") == "observed_pass"]
         sim_only = [r["id"] for r in reqs if r.get("physical_status") in ("not_observable", "not_observed")]
+        caveat = "" if confirmed else ("\nNote: CircuitLoop did not program this revision, so the camera result is not "
+                                       "attributed to it (the board may hold a different design).")
         await ctx.say(f"Physical verification: {status}. {result.get('summary', '')}\n"
                       f"Physically observed: {', '.join(observed) or 'none'}. "
-                      f"Simulation-only: {', '.join(sim_only) or 'none'}.",
+                      f"Simulation-only: {', '.join(sim_only) or 'none'}.{caveat}",
                       kind="result" if status == "passed" else "error")
+        return result
 
 
 orchestrator = Orchestrator()

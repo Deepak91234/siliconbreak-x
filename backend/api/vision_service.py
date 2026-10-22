@@ -70,7 +70,7 @@ async def finish(session_id: str) -> dict:
     entry = get(session_id)
     result = entry["session"].finish()
     res = result.model_dump() if hasattr(result, "model_dump") else dict(result)
+    res = await orchestrator.record_verification(entry["revision_id"], res)  # adds programmed_by_circuitloop
     store.update_vision_session(session_id, status="finished", result=res, finished_at=now())
-    await orchestrator.record_verification(entry["revision_id"], res)
     await publish(session_id)
     return res
