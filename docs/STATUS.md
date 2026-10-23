@@ -1,10 +1,10 @@
-# CircuitLoop status (2026-10-21)
+# CircuitLoop status (2026-10-23)
 
 ## Verified on this Mac
 
 | Area | Evidence |
 |---|---|
-| Test suite | 322 pytest passed, 1 skipped (the opt-in Vivado test, which passes when run with `--run-vivado`); 6 vitest passed; `npm run build` clean |
+| Test suite | 330 pytest passed, 1 skipped (the opt-in Vivado test, which passes when run with `--run-vivado`); 11 vitest passed; `npm run build` clean |
 | Demo 1, real end to end via the API | offline spec → template Verilog → lint (0 messages) → 23/23 simulation checks → Vivado synth/impl in `vivado_container` → timing met (WNS +5.239 ns) → valid `.bit` → board detection honestly `unavailable` |
 | Demo 2, conversational follow-up | revision r2 is a `modification` of r1 (count down, reset on BTNC, fast mode kept) → 35/35 checks → Vivado rebuild (WNS +4.454 ns, 36 LUT, 78 FF) |
 | Fault injection | `double_rate` planted in the core → 11 failing checks → repair `unavailable` (no API key) → Vivado skipped |
@@ -15,6 +15,22 @@
 | Webcam pipeline through the API | synthetic camera frames streamed over `/ws/vision` in the browser's binary format, `auto-roi`, guided phases, finish → `passed` with ratio ≈ 3, verdict stored on the revision, evidence plot served |
 | RTL safety checker | blocks `$system`, every `$c` variant, file I/O, `` `include ``/`` `define ``, DPI, `bind`, extra modules, derived clocks before any Verilator run |
 | Dashboard | live environment bar, chat, 14-stage pipeline, Verilog, Simulation, Vivado, Hardware tabs checked in the browser against real runs |
+
+## Dashboard (redesign, browser-validated)
+
+Validated in a browser against a real backend at 1440 px, 1024 px and 375 px: the welcome workspace with example cards that fill the real prompt; a live traffic-light run streaming over the WebSocket through every stage to a validated bitstream, with detection honestly `unavailable`; the 2D twin highlighting a guide step's controls; a scenario replay animating LEDs from the Verilator trace; the virtual FPGA (Demo 2 wraps 0→15 after 1 s, BTNC holds 0000, and it resumes after release); the 3D view rendering; the block diagram; the revision comparison; Verilog search; and presentation mode with a labelled replay. Panels resize, and below 1280 px and 900 px they become drawers with no horizontal overflow.
+
+Modes and provenance: **Preview** uses the bundled example specs with highlights and steps only (no LED states). **Simulation** shows only Verilator data (replay or virtual FPGA). **Live hardware** shows backend-confirmed programming and webcam-observed LEDs only. Every LED state carries its source label.
+
+## What remains to connect or test for full end-to-end operation
+
+| Integration | How to test | What should change in the UI |
+|---|---|---|
+| Anthropic model | Add `ANTHROPIC_API_KEY` to `.env`, open the AI-mode chip, then **Reload configuration**. Run `scripts/llm_smoke.py` (billed), then a design and a fault-injection run | The chip says "Model agent"; revisions show `interpreter: llm:…`; the repair stage runs instead of showing `unavailable` |
+| Board detection (hw_server over XVC) | Plug in the Basys 3 (your launcher loop starts `xvcd`), then press **Detect** in the Connection tab or the hardware chip. Allow 60–90 s for Vivado startup | Hardware state becomes `connected` with idcode `0x0362d093` |
+| Programming | Click **Program FPGA…** in Live mode or the Hardware tab, then approve in the chat | The timeline Program stage passes, the inspector shows "rN programmed", and Guided hardware mode applies to the real board |
+| Webcam verification | In the Camera tab, allow the camera, draw a box around the LEDs, and run the guided phases | Live mode shows **Observed (webcam)** LED states on the twin; the verify stage records pass/fail/inconclusive with evidence |
+| Live-mode observed LEDs on the twin | During a running camera session, switch the inspector to Live | LED states come from `vision.updated` live states. This was tested only with synthetic frames through the API, not yet from a real camera into the twin |
 
 ## Not yet tested (needs you)
 
@@ -29,5 +45,8 @@
 
 * A camera verdict is attributed to a revision (and can upgrade its run to `passed`) only if CircuitLoop programmed that revision; otherwise it is stored with `programmed_by_circuitloop: false`.
 * Mutation-based fault injection is written against the template generator's signal names, so on LLM-written cores most mutations report "does not apply" (`stuck_output` and `invert_output` work on any core).
-* The Vision tab cannot find a session after a backend restart (sessions are in memory).
+* The Camera tab cannot resume a live session after a backend restart (sessions are in memory; finished results are stored).
+* The board drawing follows the real component order, labels and arrangement, but positions approximate the board drawing; they are not CAD data.
+* `npm audit` reports 12 advisories in frontend dependencies (mostly dev tooling); not addressed.
+* A backend restart is needed for a running `./scripts/dev.sh` to serve the new endpoints (the Vite server hot-reloads the UI, but the old backend returns 404 for the guide and board endpoints).
 * The Claude app's Browser-pane server launcher cannot read `~/Desktop` without a macOS privacy permission. Start the servers with `./scripts/dev.sh` in a terminal instead.
