@@ -213,6 +213,9 @@ async def run_build(
                             result.stage_times[stage] = round(time.monotonic() - stage_start[stage], 1)
                         await _maybe(on_stage, stage, status)
 
+            await _maybe(on_line, f"CL_CMD docker exec -u user -w {cont_dir} {env.active_container} bash -c "
+                                  f"'source {env.settings_script}; vivado -mode batch -nojournal -notrace -log vivado.log "
+                                  f"-source build.tcl -tclargs {tag}'")
             proc = await ctr.container_exec(
                 env.active_container, script, workdir=cont_dir, timeout_s=s.vivado_build_timeout_s,
                 on_line=handle, cancel=cancel, settings=s,

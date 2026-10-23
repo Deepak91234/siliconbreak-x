@@ -94,6 +94,13 @@ async def _say(emit: Emit | None, kind: str, data: dict) -> None:
         await emit(kind, data)
 
 
+
+def _cmd(argv: list[str], limit: int = 600) -> str:
+    """The exact command line a tool ran (for the dashboard's stage details); long source lists are elided."""
+    import shlex
+    text = shlex.join(str(a) for a in argv)
+    return text if len(text) <= limit else text[:limit] + " ..."
+
 async def run_simulation_suite(
     spec: DesignSpec,
     rtl_files: list[Path],
@@ -151,6 +158,7 @@ async def run_simulation_suite(
             await log(f"lint could not run: {e}")
             return done("error", plan=plan, diagnostics={"error": f"lint could not run: {e}"})
         lint[label] = {"ok": res.ok, "messages": [m.as_dict() for m in res.messages], "params": label}
+        await log(f"$ {_cmd(res.process.argv)}")
         await log(f"lint ({label} params): {'ok' if res.ok else 'FAILED'}, {len(res.messages)} messages")
         for m in res.messages:
             await log(f"  {m.severity} {m.code or ''} {Path(m.file).name if m.file else ''}:{m.line or ''} {m.message}")
@@ -178,6 +186,7 @@ async def run_simulation_suite(
     build = await V.build_harness(sources, workspace, plan.params, sim_dir / "obj", trace=waveforms)
     build_info = {"ok": build.ok, "duration_s": round(time.monotonic() - tb, 2),
                   "log_tail": _tail(build.process.text, 3000)}
+    await log(f"$ {_cmd(build.process.argv)}")
     await log(f"build {'ok' if build.ok else 'FAILED'} in {build_info['duration_s']} s")
     if not build.ok:
         design_errs = [m.as_dict() for m in build.messages if m.fatal]
@@ -205,6 +214,7 @@ async def run_simulation_suite(
         if waveforms and sc.vcd_window is not None:
             vcd = (sim_dir / f"{sc.id}.vcd", int(sc.vcd_window[0]), int(sc.vcd_window[1]))
         run = await V.run_harness(build.binary, workspace, stim, trace_path, vcd=vcd)
+        await log(f"$ {_cmd(run.process.argv)}")
         entry = {"id": sc.id, "title": sc.title, "description": sc.description,
                  "requirement_ids": sc.requirement_ids, "end_cycle": sc.end_cycle,
                  "trace_file": str(trace_path.relative_to(workspace)),

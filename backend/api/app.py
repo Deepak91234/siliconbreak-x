@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.agent import approvals
 from backend.api import environment, vision_service
+from backend.api.guide_routes import router as guide_router
 from backend.api.routes import router
 from backend.core.config import REPO_ROOT, get_settings
 from backend.core.events import Event, bus
@@ -91,6 +92,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        bus.remove_sink(_persist)
         for t in (monitor, startup):
             t.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -127,6 +129,7 @@ async def reject_cross_origin_writes(request: Request, call_next):
 
 
 app.include_router(router)
+app.include_router(guide_router)
 
 
 @app.websocket("/ws/events")

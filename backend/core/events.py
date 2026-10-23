@@ -81,7 +81,12 @@ class EventBus:
         self._seq = itertools.count(1)
 
     def add_sink(self, sink: Sink) -> None:
-        self._sinks.append(sink)
+        if sink not in self._sinks:
+            self._sinks.append(sink)
+
+    def remove_sink(self, sink: Sink) -> None:
+        if sink in self._sinks:
+            self._sinks.remove(sink)
 
     def subscribe(self, maxsize: int = 5000) -> asyncio.Queue[Event]:
         q: asyncio.Queue[Event] = asyncio.Queue(maxsize=maxsize)
