@@ -1,17 +1,30 @@
 /**
- * Dashboard shell: environment bar, chat (left), pipeline monitor and the
- * per-revision tabs (right). All content comes from the store, which is fed
- * only by the backend REST API and /ws/events (docs/api.md).
+ * CircuitLoop workspace shell.
+ *
+ *   left    AI agent conversation (ChatPanel)
+ *   centre  engineering workspace: agent timeline, Verilog, simulation, diagram,
+ *           Vivado, camera verification, revisions
+ *   right   hardware inspector: Basys 3 twin (2D/3D), modes, operating guide
+ *
+ * Panels resize (drag or ←/→ on the splitter) and collapse; below 1280 px the
+ * inspector becomes a slide-over drawer and below 900 px so does the chat, so
+ * code and waveform views keep their width. All content comes from the store
+ * (backend REST + /ws/events); the shell only arranges it.
  */
 
 import { useEffect, useState, type ReactNode } from "react";
+import { AIProviderDialog } from "./components/AIProviderDialog";
 import { ChatPanel } from "./components/ChatPanel";
 import { ConnectionBanner } from "./components/ConnectionBanner";
-import { PipelineMonitor, PipelineStrip } from "./components/PipelineMonitor";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
 import { Select, cx } from "./components/ui";
+import { HardwareInspector } from "./hardware/HardwareInspector";
+import { Splitter } from "./layout/Splitter";
 import { revisionStatus } from "./lib/status";
+import { INSPECTOR_DOCK_MIN_PX, setUi, useUi } from "./lib/ui";
+import { PresentationView } from "./presentation/PresentationView";
 import { effectiveRevisionId, effectiveRunId, runForRevision, type TabKey } from "./store/reducer";
 import { useAppState, useStore } from "./store/store";
 import { HardwareTab } from "./tabs/HardwareTab";
@@ -20,10 +33,13 @@ import { SimulationTab } from "./tabs/SimulationTab";
 import { VerilogTab } from "./tabs/VerilogTab";
 import { VivadoTab } from "./tabs/VivadoTab";
 import { VisionTab } from "./tabs/vision/VisionTab";
+import { DiagramView } from "./workspace/DiagramView";
+import { RevisionChanges } from "./workspace/RevisionChanges";
+import { CurrentAction, Timeline } from "./workspace/Timeline";
+import { Welcome } from "./workspace/Welcome";
 
 type Theme = "dark" | "light";
 const THEME_KEY = "circuitloop.theme";
-const PIPE_KEY = "circuitloop.pipelineCollapsed";
 
 function readPref(key: string): string | null {
   try {
@@ -41,13 +57,39 @@ function writePref(key: string, value: string): void {
   }
 }
 
+function usePanelWidth(key: string, initial: number, min: number, max: number): [number, (dx: number) => void] {
+  const [w, setW] = useState(() => {
+    const v = Number(readPref(`circuitloop.w.${key}`));
+    return Number.isFinite(v) && v >= min && v <= max ? v : initial;
+  });
+  const resize = (dx: number) =>
+    setW((cur) => {
+      const next = Math.max(min, Math.min(max, cur + dx));
+      writePref(`circuitloop.w.${key}`, String(next));
+      return next;
+    });
+  return [w, resize];
+}
+
+function useWidth(): number {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const on = () => setW(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return w;
+}
+
 const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "pipeline", label: "Agent" },
   { key: "verilog", label: "Verilog" },
   { key: "simulation", label: "Simulation" },
+  { key: "diagram", label: "Diagram" },
   { key: "vivado", label: "Vivado" },
-  { key: "hardware", label: "Hardware" },
-  { key: "vision", label: "Vision" },
-  { key: "history", label: "History" },
+  { key: "vision", label: "Camera" },
+  { key: "history", label: "Revisions" },
+  { key: "hardware", label: "Connection" },
 ];
 
 function RevisionPicker() {
@@ -61,49 +103,51 @@ function RevisionPicker() {
   const eff = revs.find((r) => r.id === effective);
   return (
     <label className="flex items-center gap-1.5 text-xs text-muted">
-      Revision
-      <Select value={pinned ?? ""} onChange={(v) => store.selectRevision(v || null)} className="max-w-[16rem]">
-        <option value="">follow latest{eff && !pinned ? ` (r${eff.number})` : ""}</option>
+      <span className="hidden lg:inline">Revision</span>
+      <Select value={pinned ?? ""} onChange={(v) => store.selectRevision(v || null)} className="max-w-[15rem]">
+        <option value="">latest{eff && !pinned ? ` (r${eff.number})` : ""}</option>
         {revs.map((r) => (
-          <option key={r.id} value={r.id}>
-            r{r.number} · {r.kind} · {revisionStatus(r.status).label}
-          </option>
+          <option key={r.id} value={r.id}>r{r.number} · {r.kind} · {revisionStatus(r.status).label}</option>
         ))}
       </Select>
     </label>
   );
 }
 
-function TabBar() {
+function CenterHeader({ maximized, onMaximize, chatDocked, onChat, inspectorVisible }: {
+  maximized: boolean; onMaximize: () => void; chatDocked: boolean; onChat: () => void; inspectorVisible: boolean;
+}) {
   const store = useStore();
   const tab = useAppState((s) => s.selection.tab);
+  // The docked inspector already shows hardware state; keep the Connection details one click away via the chip.
+  const tabs = TABS.filter((t) => t.key !== "hardware" || !inspectorVisible || tab === "hardware");
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line">
-      <nav className="-mb-px flex min-w-0 flex-1 gap-1 overflow-x-auto" role="tablist" aria-label="Views">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => store.setTab(t.key)}
-            className={cx(
-              "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors",
-              tab === t.key ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg",
-            )}
-          >
+    <div className="flex flex-wrap items-center gap-x-2 border-b border-line px-3">
+      {!chatDocked && (
+        <button type="button" onClick={onChat} className="order-2 rounded px-2 py-1 text-xs text-muted hover:bg-raised hover:text-fg sm:order-none">Chat</button>
+      )}
+      <nav className="-mb-px flex min-w-0 basis-full gap-0.5 overflow-x-auto sm:basis-0 sm:flex-1" role="tablist" aria-label="Workspace views">
+        {tabs.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => store.setTab(t.key)}
+                  className={cx("whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors duration-150",
+                    tab === t.key ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg")}>
             {t.label}
           </button>
         ))}
       </nav>
-      <div className="pb-1.5">
-        <RevisionPicker />
-      </div>
+      <div className="order-3 py-1 sm:order-none sm:py-0"><RevisionPicker /></div>
+      <button type="button" onClick={onMaximize} className="order-4 ml-auto rounded p-1.5 text-muted hover:bg-raised hover:text-fg sm:order-none sm:ml-0"
+              title={maximized ? "Restore panels" : "Maximize the workspace"} aria-pressed={maximized}>
+        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+          {maximized ? <path d="M8 3v5H3M12 17v-5h5M17 8h-5V3M3 12h5v5" strokeLinecap="round" strokeLinejoin="round" />
+            : <path d="M3 8V3h5M17 12v5h-5M12 3h5v5M8 17H3v-5" strokeLinecap="round" strokeLinejoin="round" />}
+        </svg>
+      </button>
     </div>
   );
 }
 
-function ActiveTab() {
+function CenterContent() {
   const tab = useAppState((s) => s.selection.tab);
   const projectId = useAppState((s) => s.selection.projectId);
   const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
@@ -113,63 +157,57 @@ function ActiveTab() {
   const latestRun = useAppState((s) => (latestRunId ? s.runs[latestRunId] ?? null : null));
   const run = revRun ?? latestRun;
 
+  if (!projectId && tab !== "history" && tab !== "hardware") return <Welcome />;
   let body: ReactNode;
   switch (tab) {
-    case "verilog":
-      body = <VerilogTab revisionId={revisionId} detail={detail} />;
+    case "pipeline":
+      body = run ? (
+        <div className="mx-auto max-w-4xl space-y-4">
+          <CurrentAction run={run} />
+          <Timeline run={run} />
+        </div>
+      ) : <Welcome />;
       break;
-    case "simulation":
-      body = <SimulationTab revisionId={revisionId} run={run} />;
-      break;
-    case "vivado":
-      body = <VivadoTab revisionId={revisionId} run={run} />;
-      break;
-    case "hardware":
-      body = <HardwareTab revisionId={revisionId} run={run} />;
-      break;
-    case "vision":
-      body = <VisionTab revisionId={revisionId} />;
-      break;
-    case "history":
-      body = <HistoryTab />;
-      break;
+    case "verilog": body = <VerilogTab revisionId={revisionId} detail={detail} />; break;
+    case "simulation": body = <SimulationTab revisionId={revisionId} run={run} />; break;
+    case "diagram": body = <DiagramView revisionId={revisionId} />; break;
+    case "vivado": body = <VivadoTab revisionId={revisionId} run={run} />; break;
+    case "hardware": body = <HardwareTab revisionId={revisionId} run={run} />; break;
+    case "vision": body = <VisionTab revisionId={revisionId} />; break;
+    case "history": body = <div className="space-y-4"><RevisionChanges revisionId={revisionId} /><HistoryTab /></div>; break;
   }
   return <div className="min-w-0">{body}</div>;
 }
 
-function PipelineSection() {
-  const projectId = useAppState((s) => s.selection.projectId);
-  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
-  const runId = useAppState(effectiveRunId);
-  const hasRun = useAppState((s) => !!(runId && s.runs[runId]));
-  const [collapsed, setCollapsed] = useState(() => readPref(PIPE_KEY) === "1");
-  const toggle = () => {
-    setCollapsed((c) => {
-      writePref(PIPE_KEY, c ? "0" : "1");
-      return !c;
-    });
-  };
+function Drawer({ side, onClose, children, label }: { side: "left" | "right"; onClose: () => void; children: ReactNode; label: string }) {
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [onClose]);
   return (
-    <section className="rounded-lg border border-line bg-panel">
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-1.5">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Pipeline</h2>
-        <button type="button" onClick={toggle} className="text-xs text-muted hover:text-fg" aria-expanded={!collapsed}>
-          {collapsed ? "Expand" : "Collapse"}
-        </button>
-      </header>
-      {!collapsed ? (
-        <PipelineMonitor runId={runId} detail={detail} />
-      ) : hasRun ? (
-        <PipelineStrip runId={runId} />
-      ) : (
-        <p className="px-3 py-2 text-xs text-muted">No run to show yet.</p>
-      )}
-    </section>
+    <div className="fixed inset-0 z-30 flex bg-black/40" onClick={onClose} role="presentation">
+      <aside role="dialog" aria-label={label} onClick={(e) => e.stopPropagation()}
+             className={cx("h-full w-[min(26rem,92vw)] bg-panel shadow-pop", side === "right" ? "ml-auto border-l border-line" : "border-r border-line")}>
+        {children}
+      </aside>
+    </div>
   );
 }
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => (readPref(THEME_KEY) === "light" ? "light" : "dark"));
+  const width = useWidth();
+  const inspectorOpen = useUi((s) => s.inspectorOpen);
+  const presentation = useUi((s) => s.presentation);
+  const aiDialog = useUi((s) => s.aiDialog);
+  const [leftW, resizeLeft] = usePanelWidth("chat", 360, 300, 560);
+  const [rightW, resizeRight] = usePanelWidth("hardware", 420, 340, 720);
+  const [maximized, setMaximized] = useState(false);
+  const [chatDrawer, setChatDrawer] = useState(false);
+  const chatDocked = width >= 900;
+  const inspectorDocked = width >= INSPECTOR_DOCK_MIN_PX;
+  const inspectorDrawer = useUi((s) => s.inspectorDrawer);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -180,16 +218,44 @@ export function App() {
     <div className="flex h-full flex-col bg-bg text-fg">
       <TopBar theme={theme} onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} />
       <ConnectionBanner />
-      <main className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
-        <aside className="h-[70vh] min-h-0 border-b border-line bg-panel lg:h-auto lg:border-b-0 lg:border-r">
-          <ChatPanel />
-        </aside>
-        <section className="min-h-0 min-w-0 space-y-3 overflow-y-auto p-3">
-          <PipelineSection />
-          <TabBar />
-          <ActiveTab />
+      <main className="flex min-h-0 flex-1">
+        {chatDocked && !maximized && (
+          <>
+            <aside className="min-h-0 flex-none bg-panel" style={{ width: leftW }} aria-label="AI agent conversation">
+              <ErrorBoundary label="Chat"><ChatPanel /></ErrorBoundary>
+            </aside>
+            <Splitter label="Resize chat panel" onResize={resizeLeft} />
+          </>
+        )}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Engineering workspace">
+          <CenterHeader maximized={maximized} onMaximize={() => setMaximized((m) => !m)} chatDocked={chatDocked && !maximized}
+                        inspectorVisible={inspectorDocked && inspectorOpen && !maximized}
+                        onChat={() => (chatDocked ? setMaximized(false) : setChatDrawer(true))} />
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <ErrorBoundary label="Workspace"><CenterContent /></ErrorBoundary>
+          </div>
         </section>
+        {inspectorDocked && inspectorOpen && !maximized && (
+          <>
+            <Splitter label="Resize hardware panel" onResize={resizeRight} invert />
+            <aside className="min-h-0 flex-none border-l border-line bg-panel" style={{ width: rightW }} aria-label="Hardware inspector">
+              <ErrorBoundary label="Hardware inspector"><HardwareInspector onClose={() => setUi({ inspectorOpen: false })} /></ErrorBoundary>
+            </aside>
+          </>
+        )}
       </main>
+      {!inspectorDocked && inspectorDrawer && (
+        <Drawer side="right" label="Hardware inspector" onClose={() => setUi({ inspectorDrawer: false })}>
+          <ErrorBoundary label="Hardware inspector"><HardwareInspector onClose={() => setUi({ inspectorDrawer: false })} /></ErrorBoundary>
+        </Drawer>
+      )}
+      {!chatDocked && chatDrawer && (
+        <Drawer side="left" label="AI agent conversation" onClose={() => setChatDrawer(false)}>
+          <ChatPanel />
+        </Drawer>
+      )}
+      {presentation && <ErrorBoundary label="Presentation mode"><PresentationView /></ErrorBoundary>}
+      <AIProviderDialog open={aiDialog} onClose={() => setUi({ aiDialog: false })} />
       <Toasts />
     </div>
   );

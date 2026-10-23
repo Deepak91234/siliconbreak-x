@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { INSPECTOR_DOCK_MIN_PX, setUi, toggleInspector, useUi } from "../lib/ui";
 import { errorMessage } from "../api/client";
 import type { Approval, Environment } from "../api/types";
 import { useAppState, useStore } from "../store/store";
@@ -203,6 +204,7 @@ function ApprovalsTray({ pending }: { pending: Approval[] }) {
 }
 
 export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onToggleTheme: () => void }) {
+  const inspectorOpen = useUi((u) => (window.innerWidth >= INSPECTOR_DOCK_MIN_PX ? u.inspectorOpen : u.inspectorDrawer));
   const store = useStore();
   const env = useAppState((s) => s.environment);
   const envError = useAppState((s) => s.environmentError);
@@ -311,18 +313,35 @@ export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onTo
                 Open Hardware tab
               </button>
             </Popover>
-            <Popover tone={env.llm.configured ? "ok" : "warn"} label={env.llm.configured ? `${env.llm.provider} · ${env.llm.model}` : "LLM not configured – offline rules"}>
+            <Popover tone={env.llm.configured ? "ok" : "warn"} label={env.llm.configured ? `Model agent · ${env.llm.model}` : "Offline rules mode"}>
               <KV items={[
+                ["Mode", env.llm.configured ? "model-powered agent" : "rules-based offline fallback"],
                 ["Provider", env.llm.provider],
                 ["Model", env.llm.model],
                 ["Configured", env.llm.configured ? "yes" : "no (requests use the offline rule interpreter and preverified templates; automatic repair is unavailable)"],
               ]} />
+              <button type="button" className="mt-2 text-[11px] text-accent hover:underline" onClick={() => setUi({ aiDialog: true })}>
+                {env.llm.configured ? "AI provider settings" : "Set up the AI model"}
+              </button>
             </Popover>
           </>
         )}
       </div>
 
       <div className="flex items-center gap-1">
+        <Button variant="ghost" size="sm" onClick={() => setUi({ presentation: true })} title="Presentation mode for demos">
+          <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+            <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" /><path d="M10 13.5V17M7 17h6" strokeLinecap="round" />
+          </svg>
+          <span className="hidden md:inline">Present</span>
+        </Button>
+        <Button variant={inspectorOpen ? "secondary" : "ghost"} size="sm" onClick={toggleInspector}
+                title="Show or hide the hardware inspector" aria-pressed={inspectorOpen}>
+          <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+            <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" /><path d="M12.5 3.5v13" />
+          </svg>
+          <span className="hidden md:inline">Hardware</span>
+        </Button>
         <ApprovalsTray pending={pending} />
         <Button variant="ghost" size="sm" busy={refreshing} onClick={() => void refresh()} title={env ? `Checked ${fmtAgo(env.checked_at, now)}` : "Refresh environment"}>
           <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>

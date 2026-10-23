@@ -23,7 +23,7 @@ import type {
 import { STAGE_KEYS } from "../api/types";
 import type { SocketInfo } from "../api/events";
 
-export type TabKey = "verilog" | "simulation" | "vivado" | "hardware" | "vision" | "history";
+export type TabKey = "pipeline" | "verilog" | "simulation" | "diagram" | "vivado" | "hardware" | "vision" | "history";
 
 export interface LogLine {
   seq: number;
@@ -103,7 +103,7 @@ export function initialState(): AppState {
     logs: {},
     revisionVersions: {},
     vision: {},
-    selection: { projectId: null, revisionId: null, runId: null, tab: "verilog", compareAgainst: null },
+    selection: { projectId: null, revisionId: null, runId: null, tab: "pipeline", compareAgainst: null },
     lastEventAt: null,
     faults: null,
     faultsError: null,

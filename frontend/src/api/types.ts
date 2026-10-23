@@ -582,3 +582,128 @@ export interface FaultInfo {
   description: string;
   families: string[];
 }
+
+// ---------------------------------------------------------------- hardware guide (guide_routes.py)
+
+export interface BoardDef {
+  id: string;
+  name: string;
+  part: string;
+  idcode: string;
+  clock: { port: string; hz: number };
+  iostandard: string;
+  ports: Record<string, { direction: string; kind: string; pins: string[]; active: string | null }>;
+}
+
+export type GuideAction = "hold" | "press" | "release" | "set_on" | "set_off" | "observe";
+
+export interface GuideComponent {
+  id: string;
+  kind: "button" | "switch" | "led";
+  label: string;
+  pin: string | null;
+  role: "input" | "output";
+  signal: string;
+  function: string;
+  debounce_ms?: number;
+}
+
+export interface GuideStep {
+  id: string;
+  title: string;
+  instruction: string;
+  actions: Array<{ component: string; label: string; action: GuideAction; signal: string }>;
+  observe: string[];
+  expected: string;
+  confirm: string;
+  requirement_ids: string[];
+  scenario_id: string | null;
+  observation_id: string | null;
+  sim_status: "passed" | "failed" | "not_tested";
+  hold: boolean;
+  camera_verifiable: boolean;
+}
+
+export interface Guide {
+  board: string;
+  title: string;
+  summary: string;
+  family: string;
+  components: GuideComponent[];
+  unused_note: string;
+  steps: GuideStep[];
+  derived_from: { spec: boolean; test_scenarios: string[]; simulation_report: boolean };
+  camera_limit_hz: number;
+  preview: boolean;
+  example?: string;
+  revision_id: string | null;
+  revision_number?: number;
+  programmed_by_circuitloop?: boolean;
+  sim_status?: string | null;
+  build_status?: string | null;
+}
+
+export interface ExampleInfo { name: string; title: string; family: string; summary: string }
+
+export interface ScenarioTrace {
+  source: "verilator";
+  revision_id: string;
+  scenario_id: string;
+  title: string;
+  description: string;
+  passed: boolean;
+  requirement_ids: string[];
+  clk_hz: number;
+  end_cycle: number;
+  duration_s: number;
+  inputs: Array<{ cycle: number; port: string; value: number; t_s: number }>;
+  /** signal -> [cycle, value, seconds] */
+  outputs: Record<string, Array<[number, number, number]>>;
+}
+
+export interface VirtualEvent { t_s: number; port: "sw" | "btnC" | "btnU" | "btnL" | "btnR" | "btnD"; value: number }
+
+export interface VirtualResult {
+  source: "verilator";
+  revision_id: string;
+  revision_number: number;
+  clk_hz: number;
+  duration_s: number;
+  end_cycle: number;
+  note: string;
+  /** signal -> [seconds, value] */
+  outputs: Record<string, Array<[number, number]>>;
+}
+
+export interface DiagramNode {
+  id: string;
+  column: number;
+  kind: "clock" | "input" | "rtl" | "functional" | "output";
+  label: string;
+  sub: string;
+  source: "board" | "spec" | "rtl";
+  component?: string;
+  components?: string[];
+}
+
+export interface Diagram {
+  revision_id: string;
+  family: string;
+  label: string;
+  explanation: string;
+  nodes: DiagramNode[];
+  edges: Array<{ from: string; to: string; label?: string; clock?: boolean }>;
+  requirements: Array<{ id: string; text: string }>;
+}
+
+export interface LlmStatus {
+  provider: string;
+  model: string;
+  configured: boolean;
+  mode: "model" | "offline-rules";
+  key_present: boolean;
+  key_source: string | null;
+  env_file: string;
+  env_file_exists: boolean;
+  explanation: string;
+}

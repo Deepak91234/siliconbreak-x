@@ -102,6 +102,13 @@ endpoints or from WebSocket events — the frontend never invents progress.
 | POST | `/api/vision/sessions/{id}/phase` | `{"action": "start", "phase_id": "..."}` or `{"action": "end"}` | `VisionSessionState` |
 | POST | `/api/vision/sessions/{id}/finish` | | `VerificationResult` (also stored on the revision; updates stage `verify`) |
 | GET | `/api/files/{path}` | | raw file under `runs/` (path-guarded): bitstreams, reports, VCD, evidence |
+| GET | `/api/board` | | trusted Basys 3 definition from `boards/basys3/board.json` (ports, pins, part) |
+| GET | `/api/revisions/{id}/guide` | | operating guide: used components (pins, signals, functions) and steps derived from the spec + simulation test plan/report |
+| GET | `/api/examples` / `/api/examples/{name}/guide` | | bundled example specs and their guides (Preview mode; `preview: true`, no simulation data) |
+| GET | `/api/revisions/{id}/scenarios/{sid}/trace` | | recorded Verilator stimulus + LED trace for one test scenario (`source: "verilator"`) |
+| POST | `/api/revisions/{id}/simulate` | `{"events": [{"t_s", "port", "value"}], "duration_s"}` | virtual FPGA: runs this revision's compiled harness on the inputs; `outputs.led = [[t_s, value]]` (≤ 120 s, ≤ 500 events) |
+| GET | `/api/revisions/{id}/diagram` | | functional block diagram: nodes from the spec + RTL instance hierarchy (not a netlist) |
+| GET | `/api/llm` · POST `/api/llm/reload` | | AI mode (`model` / `offline-rules`), key presence and source; reload re-reads `.env` (the key is never returned) |
 
 ```jsonc
 // Environment

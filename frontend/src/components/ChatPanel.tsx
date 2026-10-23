@@ -19,12 +19,6 @@ import { Button, Collapsible, Pill, Pre, Select, Spinner, cx } from "./ui";
 import { useRevision } from "../tabs/VerilogTab";
 import { faultsForFamily } from "../lib/faults";
 
-const EXAMPLES = [
-  "Build a 4-bit counter on LED0-LED3 that counts up once per second, and three times per second while I hold BTNU.",
-  "Make it count down instead, and holding BTNC should reset the count to 0.",
-  "Blink LED0 and LED1 alternately at 2 Hz.",
-];
-
 function SpecSummary({ spec }: { spec: Record<string, unknown> }) {
   const behavior = (spec.behavior ?? {}) as Record<string, unknown>;
   const outputs = (spec.outputs ?? []) as Array<{ name?: string; indices?: number[] }>;
@@ -255,35 +249,38 @@ function Composer({ projectId, disabled }: { projectId: string | null; disabled:
           </Button>
         </div>
       </div>
-      <RunOptionsBar options={options} onChange={setOptions} disabled={disabled || sending} family={family} />
+      <details className="group rounded-md border border-line/70 px-2 py-1" open={!!options.inject_fault || options.simulation_only}>
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-faint hover:text-fg">
+          <span className="transition-transform group-open:rotate-90">›</span>
+          Advanced / developer tools
+          {(options.inject_fault || options.simulation_only) && (
+            <span className="ml-auto rounded bg-warn/15 px-1.5 text-[10px] font-semibold text-warn">
+              {options.inject_fault ? "fault armed" : "simulation only"}
+            </span>
+          )}
+        </summary>
+        <div className="pb-1 pt-2">
+          <RunOptionsBar options={options} onChange={setOptions} disabled={disabled || sending} family={family} />
+        </div>
+      </details>
     </div>
   );
 }
 
 function Welcome() {
+  const llm = useAppState((st) => st.environment?.llm ?? null);
   return (
-    <div className="space-y-4 px-1 py-6">
-      <div>
-        <h2 className="text-base font-semibold">What should the Basys 3 do?</h2>
-        <p className="mt-1 text-xs leading-relaxed text-muted">
-          Describe LED behaviour driven by the clock, buttons and switches (counters, blinkers, LED patterns, traffic lights).
-          CircuitLoop writes a specification, generates Verilog, lints and simulates it against tests derived from the spec,
-          repairs failures, builds a bitstream with Vivado, and - with your approval - programs the board and checks the LEDs with your webcam.
+    <div className="space-y-3 px-1 py-6">
+      <h2 className="text-base font-semibold">What should the Basys 3 do?</h2>
+      <p className="text-xs leading-relaxed text-muted">
+        Describe LED behaviour driven by the clock, buttons and switches: counters, blinkers, LED patterns or a
+        traffic light. Pick an example in the workspace or write your own below.
+      </p>
+      {llm && (
+        <p className="text-[11px] text-faint">
+          {llm.configured ? `Agent: ${llm.provider} ${llm.model}.` : "Agent: offline rules mode (no API key). Supported phrasings and preverified templates only."}
         </p>
-      </div>
-      <div className="space-y-1.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">Example requests</div>
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("circuitloop:fill-composer", { detail: ex }))}
-            className="block w-full rounded-md border border-line bg-raised/50 px-3 py-2 text-left text-xs text-muted transition-colors hover:border-accent/40 hover:text-fg"
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
+      )}
     </div>
   );
 }

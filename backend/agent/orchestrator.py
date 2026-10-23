@@ -392,9 +392,20 @@ class Orchestrator:
             await ctx.stage("simulate", "skipped", "RTL rejected by safety checker")
             return report
 
+        phase = {"stage": "lint", "lint_ok": True}
+
         async def emit(kind: str, data: dict) -> None:
             if kind == "log":
-                await ctx.log("simulate", "verilator", str(data.get("line", "")))
+                line = str(data.get("line", ""))
+                if line.startswith("lint (") and "FAILED" in line:
+                    phase["lint_ok"] = False
+                if line.startswith("building Verilator harness") and phase["stage"] == "lint":
+                    # lint is finished once the runner moves on to the harness build
+                    if phase["lint_ok"]:
+                        await ctx.stage("lint", "passed", "clean at real and test clock parameters")
+                    phase["stage"] = "simulate"
+                    await ctx.stage("simulate", "running", "building the Verilator harness")
+                await ctx.log(phase["stage"], "verilator", line)
             elif kind == "scenario":
                 await ctx.log("simulate", "oracle", json.dumps({"scenario": data.get("id"), "passed": data.get("passed")}))
                 await ctx.stage("simulate", "running", f"scenario {data.get('id')}: {'pass' if data.get('passed') else 'FAIL'}")

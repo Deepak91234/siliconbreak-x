@@ -4,7 +4,7 @@
  * revision (GET .../diff?against=). Everything shown is the stored revision.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Revision, RevisionFile, RevisionSummary } from "../api/types";
 import type { ProjectDetail } from "../store/reducer";
@@ -22,27 +22,82 @@ function sortFiles(files: RevisionFile[]): RevisionFile[] {
   return files.slice().sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9) || a.name.localeCompare(b.name));
 }
 
+function download(name: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function CodeViewer({ revisionId, file, version }: { revisionId: string; file: RevisionFile; version: number }) {
   const res = useResource(`${revisionId}/${file.name}`, version, (signal) => api.revisionFile(revisionId, file.name, signal));
   const lines = useMemo(() => (res.data ? highlightLines(res.data.content, languageFor(file.name)) : []), [res.data, file.name]);
+  const raw = useMemo(() => (res.data ? res.data.content.split("\n") : []), [res.data]);
+  const modules = useMemo(() => raw.flatMap((l, i) => {
+    const m = /^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(l);
+    return m ? [{ name: m[1], line: i }] : [];
+  }), [raw]);
+  const [query, setQuery] = useState("");
+  const [cur, setCur] = useState(0);
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? raw.flatMap((l, i) => (l.toLowerCase().includes(q) ? [i] : [])) : [];
+  }, [raw, query]);
+  const box = useRef<HTMLDivElement>(null);
+  const jump = (line: number) => box.current?.querySelector(`[data-line="${line}"]`)?.scrollIntoView({ block: "center" });
+  useEffect(() => {
+    setCur(0);
+    if (matches.length) jump(matches[0]);
+  }, [matches]);
+  const step = (d: number) => {
+    if (!matches.length) return;
+    const n = (cur + d + matches.length) % matches.length;
+    setCur(n);
+    jump(matches[n]);
+  };
   if (res.loading && !res.data) return <Loading label={`Loading ${file.name}…`} />;
   if (res.notFound) return <Empty title={`${file.name} is not available`}>The server has no text content for this file (it may not have been written yet).</Empty>;
   if (res.error && !res.data) return <ErrorNote error={res.error} onRetry={res.reload} />;
   if (!res.data) return null;
+  const matchSet = new Set(matches);
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-sunken">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[11px] text-muted">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-1.5 text-[11px] text-muted">
         <span className="font-mono text-fg">{file.name}</span>
         <Pill tone="muted">{file.role}</Pill>
         <span>{lines.length} lines · {fmtBytes(file.size)}</span>
-        <span className="ml-auto font-mono" title={file.sha256}>sha256 {shortSha(file.sha256)}</span>
-        <CopyButton text={res.data.content} label="copy source" />
+        {modules.length > 0 && (
+          <span className="flex items-center gap-1">
+            {modules.map((m) => (
+              <button key={m.line} type="button" onClick={() => jump(m.line)} className="rounded bg-raised px-1.5 font-mono text-fg hover:text-accent"
+                      title={`Go to module ${m.name} (line ${m.line + 1})`}>{m.name}</button>
+            ))}
+          </span>
+        )}
+        <span className="ml-auto flex items-center gap-1">
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" aria-label="Search in file"
+                 onKeyDown={(e) => { if (e.key === "Enter") step(e.shiftKey ? -1 : 1); }}
+                 className="w-32 rounded border border-line bg-panel px-1.5 py-0.5 text-fg outline-none focus:border-accent" />
+          {query && <span className="tabular-nums">{matches.length ? `${cur + 1}/${matches.length}` : "0"}</span>}
+          {matches.length > 1 && (
+            <>
+              <button type="button" onClick={() => step(-1)} className="px-1 hover:text-fg" aria-label="Previous match">↑</button>
+              <button type="button" onClick={() => step(1)} className="px-1 hover:text-fg" aria-label="Next match">↓</button>
+            </>
+          )}
+        </span>
+        <span className="font-mono" title={file.sha256}>sha256 {shortSha(file.sha256)}</span>
+        <CopyButton text={res.data.content} label="copy" />
+        <button type="button" onClick={() => download(file.name, res.data!.content)} className="hover:text-fg">download</button>
       </div>
-      <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+      <div ref={box} className="max-h-[calc(100vh-15rem)] overflow-auto">
         <table className="border-collapse font-mono text-[12px] leading-[1.6]">
           <tbody>
             {lines.map((html, i) => (
-              <tr key={i} className="hover:bg-raised/40">
+              <tr key={i} data-line={i}
+                  className={cx(matchSet.has(i) ? (matches[cur] === i ? "bg-warn/20" : "bg-warn/10") : "hover:bg-raised/40")}>
                 <td className="w-12 select-none border-r border-line/60 pr-2 text-right align-top text-faint">{i + 1}</td>
                 <td className="whitespace-pre pl-3 pr-6">
                   <span className="hljs" dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }} />

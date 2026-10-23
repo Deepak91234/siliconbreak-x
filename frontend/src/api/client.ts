@@ -27,6 +27,14 @@ import type {
   VivadoBuildResult,
   Waveform,
   LedRoi,
+  BoardDef,
+  Diagram,
+  ExampleInfo,
+  Guide,
+  LlmStatus,
+  ScenarioTrace,
+  VirtualEvent,
+  VirtualResult,
 } from "./types";
 
 export type ApiErrorKind = "unreachable" | "not_found" | "conflict" | "validation" | "server" | "client";
@@ -255,6 +263,21 @@ export const api = {
    * a 404 means "no catalogue" and the test-mode selector is disabled.
    */
   faults: () => request<FaultInfo[]>("/api/faults"),
+
+  // hardware guide, board twin, virtual FPGA, diagram, AI provider (backend/api/guide_routes.py)
+  board: () => request<BoardDef>("/api/board"),
+  guide: (revisionId: string, signal?: AbortSignal) => request<Guide>(`/api/revisions/${enc(revisionId)}/guide`, { signal }),
+  examples: () => request<ExampleInfo[]>("/api/examples"),
+  exampleGuide: (name: string, signal?: AbortSignal) => request<Guide>(`/api/examples/${enc(name)}/guide`, { signal }),
+  scenarioTrace: (revisionId: string, scenarioId: string, signal?: AbortSignal) =>
+    request<ScenarioTrace>(`/api/revisions/${enc(revisionId)}/scenarios/${enc(scenarioId)}/trace`, { signal }),
+  simulate: (revisionId: string, events: VirtualEvent[], durationS: number, signal?: AbortSignal) =>
+    request<VirtualResult>(`/api/revisions/${enc(revisionId)}/simulate`, {
+      method: "POST", body: { events, duration_s: durationS }, signal, timeoutMs: 60_000,
+    }),
+  diagram: (revisionId: string, signal?: AbortSignal) => request<Diagram>(`/api/revisions/${enc(revisionId)}/diagram`, { signal }),
+  llm: () => request<LlmStatus>("/api/llm"),
+  llmReload: () => request<LlmStatus>("/api/llm/reload", { method: "POST", timeoutMs: 90_000 }),
 };
 
 export type Api = typeof api;

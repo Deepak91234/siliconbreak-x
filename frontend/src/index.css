@@ -7,44 +7,87 @@
  * (tailwind.config.ts). Light values on :root, dark values under .dark
  * (index.html starts in dark; App.tsx toggles the class).
  */
+/*
+ * CircuitLoop design tokens. Colours are "r g b" triplets so Tailwind's
+ * <alpha-value> works (tailwind.config.ts). Light values on :root, dark values
+ * under .dark (the default). Spacing follows Tailwind's 4 px scale; radius,
+ * elevation, typography and motion tokens are below and mapped in the config.
+ */
 :root {
-  --bg: 246 247 249;
+  /* surfaces */
+  --bg: 245 247 248;
   --panel: 255 255 255;
-  --raised: 240 243 247;
-  --sunken: 234 238 243;
-  --line: 214 220 228;
-  --fg: 15 23 42;
-  --muted: 71 85 105;
-  --faint: 117 130 150;
-  --accent: 2 132 199;
+  --raised: 239 242 244;
+  --sunken: 232 236 239;
+  --line: 215 221 226;
+  --line-strong: 190 198 206;
+  /* text */
+  --fg: 17 24 32;
+  --muted: 75 87 99;
+  --faint: 120 132 144;
+  /* accent + semantic */
+  --accent: 13 148 136;
+  --accent-fg: 255 255 255;
   --ok: 5 150 105;
   --bad: 220 38 38;
   --warn: 180 115 0;
   --info: 37 99 235;
-  --idle: 117 130 150;
+  --idle: 120 132 144;
   --violet: 124 58 237;
   --orange: 234 88 12;
+  /* board twin */
+  --board: 19 71 64;
+  --board-line: 47 112 101;
+  --silk: 214 236 230;
+  --part: 32 38 44;
+  --part-edge: 70 80 90;
+  --lever: 196 204 212;
+  --chip: 24 28 32;
+  --led-on: 74 222 128;
+  --led-off: 38 64 52;
   color-scheme: light;
 }
 
 .dark {
-  --bg: 10 14 19;
-  --panel: 16 21 28;
-  --raised: 25 31 40;
-  --sunken: 7 10 14;
-  --line: 38 46 57;
-  --fg: 226 232 240;
-  --muted: 148 163 184;
-  --faint: 100 116 139;
-  --accent: 56 189 248;
+  --bg: 9 12 15;
+  --panel: 14 18 22;
+  --raised: 21 26 31;
+  --sunken: 6 8 11;
+  --line: 33 40 47;
+  --line-strong: 52 61 71;
+  --fg: 228 233 238;
+  --muted: 150 162 174;
+  --faint: 101 114 127;
+  --accent: 45 212 191;
+  --accent-fg: 4 30 27;
   --ok: 52 211 153;
   --bad: 248 113 113;
   --warn: 251 191 36;
   --info: 96 165 250;
-  --idle: 100 116 139;
+  --idle: 101 114 127;
   --violet: 167 139 250;
   --orange: 251 146 60;
+  --board: 14 52 47;
+  --board-line: 33 88 79;
+  --silk: 196 222 215;
+  --part: 26 31 36;
+  --part-edge: 60 70 80;
+  --lever: 178 188 198;
+  --chip: 18 21 24;
+  --led-on: 74 222 128;
+  --led-off: 30 52 42;
   color-scheme: dark;
+}
+
+:root {
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-panel: 0 1px 0 rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.08);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.35);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
 }
 
 html,
@@ -105,3 +148,20 @@ body {
 .hljs-params {
   color: rgb(var(--fg));
 }
+
+/* Board twin: pulsing focus ring for the current guide step (respects reduced motion). */
+@keyframes boardFocus {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.35; }
+}
+.board-focus { animation: boardFocus 1.6s var(--ease) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .board-focus { animation: none; }
+  * { transition-duration: 0ms !important; }
+}
+
+/* Panel splitter */
+.splitter { touch-action: none; }
+.splitter:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: -1px; }
+
+:focus-visible { outline: 2px solid rgb(var(--accent) / 0.8); outline-offset: 1px; }

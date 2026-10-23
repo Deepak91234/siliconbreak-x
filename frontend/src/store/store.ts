@@ -39,7 +39,7 @@ import {
 } from "./reducer";
 
 const SEQ_KEY = "circuitloop:lastSeq";
-const TABS: TabKey[] = ["verilog", "simulation", "vivado", "hardware", "vision", "history"];
+const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history"];
 
 function readSeq(): number {
   try {
@@ -66,14 +66,14 @@ export function selectionFromHash(hash: string): Partial<Selection> {
     projectId: q.get("p") || null,
     revisionId: q.get("rev") || null,
     runId: q.get("run") || null,
-    tab: tab && TABS.includes(tab) ? tab : "verilog",
+    tab: tab && TABS.includes(tab) ? tab : "pipeline",
   };
 }
 
 export function selectionToHash(sel: Selection): string {
   const q = new URLSearchParams();
   if (sel.projectId) q.set("p", sel.projectId);
-  if (sel.tab !== "verilog") q.set("tab", sel.tab);
+  if (sel.tab !== "pipeline") q.set("tab", sel.tab);
   if (sel.revisionId) q.set("rev", sel.revisionId);
   if (sel.runId) q.set("run", sel.runId);
   const s = q.toString();

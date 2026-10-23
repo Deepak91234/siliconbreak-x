@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import logging
 import struct
 import time
@@ -109,6 +110,8 @@ app = FastAPI(title="CircuitLoop", version="0.1.0", lifespan=lifespan)
 #    hides responses; it does not stop a "simple" cross-site POST from executing.
 # Requests without an Origin header (curl, scripts on this machine) are allowed.
 ALLOWED_ORIGINS = {"http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8000", "http://localhost:8000"}
+# e.g. a second dashboard on another port for testing: CIRCUITLOOP_EXTRA_ORIGINS=http://127.0.0.1:5199
+ALLOWED_ORIGINS |= {o.strip() for o in os.environ.get("CIRCUITLOOP_EXTRA_ORIGINS", "").split(",") if o.strip().startswith("http://127.0.0.1:") or o.strip().startswith("http://localhost:")}
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 app.add_middleware(
     CORSMiddleware,
