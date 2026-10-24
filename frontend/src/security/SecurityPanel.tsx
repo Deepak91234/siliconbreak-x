@@ -1,0 +1,556 @@
+/**
+ * SiliconBreak X Security tab.
+ *
+ *   contract -> suspected findings (source-linked) -> independent reproduction
+ *   (trusted tests, waveform, commands) -> formal check -> repair attempts
+ *   (diff, agent trace) -> independent retest -> evidence
+ *
+ * Everything shown comes from the stored audit record (GET /api/security/audits)
+ * and live `security.updated` events; statuses are the backend's, never inferred.
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "../api/client";
+import { securityApi, type Finding, type RepairAttempt, type SecurityAudit, type SecurityCase, type TestOutcome,
+  type VerificationReport } from "../api/security";
+import type { Run } from "../api/types";
+import { StatusIcon } from "../components/StatusIcon";
+import { Button, Card, Collapsible, CopyButton, ErrorNote, Pill, Pre, Segmented, Select, Spinner, cx } from "../components/ui";
+import { fmtDateTime } from "../lib/format";
+import { highlightLines } from "../lib/highlight";
+import { findingStatus, formalStatus, runStatus, testStatus } from "../lib/status";
+import { toast } from "../lib/toast";
+import { useResource } from "../lib/useResource";
+import { useAppState, useStore } from "../store/store";
+import { DiffView, type DiffMode } from "../tabs/DiffView";
+import { CurrentAction } from "../workspace/Timeline";
+import { ProviderStatus } from "./ProviderStatus";
+import { SecurityWave } from "./SecurityWave";
+
+const SOURCE_KIND_LABEL: Record<string, string> = {
+  demo: "demonstration design",
+  research_injected: "research-injected defect",
+  historical: "historical fix (pinned)",
+  benchmark_adapted: "adapted benchmark task",
+};
+
+export function SecurityPanel() {
+  const store = useStore();
+  const projectId = useAppState((s) => s.selection.projectId);
+  const all = useAppState((s) => s.security);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPicked(null);
+    store.loadAudits(projectId ?? undefined).then(() => setLoadErr(null)).catch((e) => setLoadErr(errorMessage(e)));
+  }, [projectId, store]);
+
+  const audits = useMemo(
+    () => Object.values(all).filter((a) => !projectId || a.project_id === projectId).sort((a, b) => b.created_at - a.created_at),
+    [all, projectId],
+  );
+  const audit = audits.find((a) => a.id === picked) ?? audits[0] ?? null;
+
+  if (loadErr) return <ErrorNote error={loadErr} />;
+  if (!projectId || !audit) return <SecurityStart />;
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      <AuditHeader audit={audit} audits={audits} onPick={setPicked} />
+      <AuditBody audit={audit} />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ start
+
+export function SecurityStart({ compact = false }: { compact?: boolean }) {
+  const store = useStore();
+  const cases = useResource<SecurityCase[]>("cases", 0, () => securityApi.cases());
+  const [busy, setBusy] = useState<string | null>(null);
+  const start = async (caseId: string) => {
+    setBusy(caseId);
+    try {
+      await store.startSecurityAudit(caseId);
+    } catch (e) {
+      toast(`Could not start the audit: ${errorMessage(e)}`, "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className={cx("mx-auto space-y-4", compact ? "" : "max-w-3xl py-4")}>
+      {!compact && (
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">SiliconBreak X security audit</h2>
+          <p className="mt-1 text-sm text-muted">
+            Checks RTL against a written security contract: an investigator proposes suspected weaknesses, a trusted verifier
+            (Verilator tests + Yosys formal) independently reproduces them, a repair agent edits an isolated copy, and the
+            verifier retests the patch. Only verifier results count as evidence.
+          </p>
+        </div>
+      )}
+      {cases.error && <ErrorNote error={cases.error} onRetry={cases.reload} />}
+      {!cases.data && !cases.error && <div className="flex items-center gap-2 text-xs text-muted"><Spinner className="h-3.5 w-3.5" /> Loading cases…</div>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(cases.data ?? []).map((c) => (
+          <div key={c.case_id} className="rounded-lg border border-line bg-panel p-3.5 shadow-panel">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-sm font-medium text-fg">{c.title}</span>
+              <Pill tone={c.source_kind === "historical" ? "info" : "violet"}>{SOURCE_KIND_LABEL[c.source_kind] ?? c.source_kind}</Pill>
+            </div>
+            <p className="mt-1 text-xs text-muted">{c.security_contract.summary}</p>
+            <p className="mt-1 text-2xs text-faint">{c.cwe.join(", ")} · {c.tests.length} trusted tests{c.formal.available ? " · formal properties" : ""}</p>
+            <Button className="mt-2.5" size="sm" variant="primary" busy={busy === c.case_id} onClick={() => start(c.case_id)}>
+              Run security audit
+            </Button>
+          </div>
+        ))}
+      </div>
+      {!compact && <ProviderStatus />}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------- header
+
+function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: SecurityAudit[]; onPick: (id: string) => void }) {
+  const store = useStore();
+  const run = useAppState((s) => (audit.run_id ? s.runs[audit.run_id] ?? null : null));
+  const [busy, setBusy] = useState<string | null>(null);
+  const running = audit.status === "running" || audit.status === "created";
+  const rs = runStatus(audit.status);
+  const c = audit.record.case;
+  const canRepair = !running && !!audit.record.reproduction && audit.record.reproduction.security_status === "failed";
+  const act = async (key: string, fn: () => Promise<unknown>) => {
+    setBusy(key);
+    try {
+      await fn();
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section className="space-y-3 rounded-lg border border-line bg-panel p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">{c.title}</h2>
+            <Pill tone={rs.tone}>{rs.label}</Pill>
+            <Pill tone="violet">{SOURCE_KIND_LABEL[c.source_kind] ?? c.source_kind}</Pill>
+          </div>
+          <p className="mt-1 text-xs text-muted">{audit.record.outcome.summary || "Audit running…"}</p>
+        </div>
+        {audits.length > 1 && (
+          <Select value={audit.id} onChange={onPick} className="max-w-[16rem]">
+            {audits.map((a) => <option key={a.id} value={a.id}>{fmtDateTime(a.created_at)} · {runStatus(a.status).label}</option>)}
+          </Select>
+        )}
+      </div>
+      {run && running && <CurrentAction run={run as Run} compact />}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" disabled={running} busy={busy === "new"}
+                onClick={() => act("new", () => store.startSecurityAudit(audit.case_id ?? ""))}>
+          Run audit again
+        </Button>
+        <span className="mx-1 h-4 w-px bg-line" aria-hidden />
+        <Button size="sm" variant="primary" disabled={!canRepair} busy={busy === "factory"}
+                title="Factory Droid edits an isolated copy; the trusted verifier judges the patch"
+                onClick={() => act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
+          Repair with Factory Droid
+        </Button>
+        <Button size="sm" variant="secondary" disabled={!canRepair} busy={busy === "model"}
+                title="A model provider (Bitdeer or Claude) proposes a full-file patch"
+                onClick={() => act("model", () => securityApi.repair(audit.id, "model").then((r) => store.putAudit(r.audit)))}>
+          Repair with model
+        </Button>
+        <Button size="sm" variant="ghost" disabled={!canRepair || !c.has_reference_fix} busy={busy === "reference"}
+                title="Run the human-written reference fix through the verifier to show the harness can tell right from wrong"
+                onClick={() => act("reference", () => securityApi.repair(audit.id, "reference").then((r) => store.putAudit(r.audit)))}>
+          Validate harness (reference fix)
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------- body
+
+function AuditBody({ audit }: { audit: SecurityAudit }) {
+  const r = audit.record;
+  const c = r.case;
+  const [selTest, setSelTest] = useState<{ report: VerificationReport; test: TestOutcome } | null>(null);
+  useEffect(() => setSelTest(null), [audit.id]);
+  const firstFail = r.reproduction?.tests.find((t) => t.status === "fail");
+  const shown = selTest ?? (r.reproduction && firstFail ? { report: r.reproduction, test: firstFail } : null);
+  return (
+    <>
+      <Pipeline audit={audit} />
+      <ContractCard c={c} />
+      <FindingsCard audit={audit} />
+      {r.reproduction && (
+        <Card title="Independent reproduction · trusted verifier" actions={<VerifyBadge report={r.reproduction} />}>
+          <TestTable report={r.reproduction} selected={shown?.report === r.reproduction ? shown.test.id : null}
+                     onSelect={(t) => setSelTest({ report: r.reproduction!, test: t })} />
+          {shown && shown.report === r.reproduction && <TestWave audit={audit} report={shown.report} test={shown.test} />}
+          <Commands report={r.reproduction} />
+        </Card>
+      )}
+      {r.formal_original && <FormalCard title="Formal property check · original design" f={r.formal_original} />}
+      {r.repairs.map((a) => (
+        <RepairCard key={a.attempt} audit={audit} attempt={a} selected={shown?.report === a.verification ? shown.test.id : null}
+                    onSelect={(t) => a.verification && setSelTest({ report: a.verification, test: t })} />
+      ))}
+      {shown && r.repairs.some((a) => a.verification === shown.report) && (
+        <TestWave audit={audit} report={shown.report} test={shown.test} />
+      )}
+      <EvidenceCard audit={audit} />
+      <ProviderStatus />
+      <Card title="Limitations">
+        <ul className="list-disc space-y-1 pl-4 text-xs text-muted">
+          <li>Results cover this case's written contract and its trusted tests and properties only, not the whole design or chip.</li>
+          <li>A formal proof holds for the property wrapper's assertions under its assumptions (reset in the first cycle).</li>
+          <li>Findings are suspicions until the verifier reproduces them; offline static rules are pattern matches, not AI.</li>
+          <li>{c.provenance}</li>
+          <li>Physical FPGA behaviour is not claimed here; programming the board needs your approval and a connected Basys 3.</li>
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function Pipeline({ audit }: { audit: SecurityAudit }) {
+  const run = useAppState((s) => (audit.run_id ? s.runs[audit.run_id] ?? null : null));
+  if (!run) return null;
+  return (
+    <ol className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Audit stages">
+      {run.stages.map((s) => (
+        <li key={s.key} title={s.summary ?? ""} className={cx("rounded-md border px-2.5 py-1.5",
+          s.status === "running" ? "border-accent/50 bg-accent/5" : "border-line bg-panel")}>
+          <div className="flex items-center gap-1.5">
+            <StatusIcon status={s.status} className="h-3.5 w-3.5" />
+            <span className="truncate text-xs font-medium">{s.label}</span>
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-2xs text-muted">{s.summary || s.status}</p>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ContractCard({ c }: { c: SecurityCase }) {
+  return (
+    <Card title="Security contract" actions={<span className="text-2xs text-faint">{c.cwe.join(" · ")}</span>}>
+      <p className="text-sm text-fg">{c.security_contract.summary}</p>
+      <ul className="mt-2 space-y-1">
+        {c.security_contract.properties.map((p) => (
+          <li key={p.id} className="text-xs text-muted"><span className="mr-1.5 font-mono text-accent">{p.id}</span>{p.text}</li>
+        ))}
+      </ul>
+      <Collapsible title={<span className="text-xs">Functional contract, interface and Basys 3 mapping</span>}>
+        <ul className="space-y-1">
+          {c.functional_contract.map((p) => (
+            <li key={p.id} className="text-xs text-muted"><span className="mr-1.5 font-mono text-info">{p.id}</span>{p.text}</li>
+          ))}
+        </ul>
+        <div className="mt-2 grid gap-x-4 gap-y-0.5 text-2xs text-muted sm:grid-cols-2">
+          {c.interface.map((p) => (
+            <div key={p.port}><span className="font-mono text-fg">{p.port}</span> <span className="text-faint">{p.dir}[{p.width}]</span> {p.text}</div>
+          ))}
+        </div>
+        {c.board && (
+          <div className="mt-2 grid gap-x-4 gap-y-0.5 text-2xs text-muted sm:grid-cols-2">
+            {c.board.mapping.map((m) => (
+              <div key={m.control}><span className="font-mono text-fg">{m.control}</span> → <span className="font-mono">{m.signal}</span> · {m.text}</div>
+            ))}
+          </div>
+        )}
+      </Collapsible>
+    </Card>
+  );
+}
+
+function FindingsCard({ audit }: { audit: SecurityAudit }) {
+  const r = audit.record;
+  const inv = r.investigation;
+  const src = useResource(audit.id, 0, (sig) => securityApi.sources(audit.id, undefined, sig));
+  const label = inv ? (inv.provider === "rules" ? "offline static rules (not AI)" : `${inv.provider} · ${inv.model ?? ""}`) : "";
+  return (
+    <Card title="Findings" actions={inv && <span className="text-2xs text-faint">investigator: {label}</span>}>
+      {!inv && <p className="text-xs text-muted">Investigation has not run yet.</p>}
+      {inv?.status === "error" && (
+        <p className="mb-2 rounded border border-warn/40 bg-warn/5 px-2 py-1.5 text-xs text-warn">
+          {inv.provider} failed: {inv.error?.message}. {inv.fallback ? `Fell back to ${inv.fallback.provider} (not AI).` : ""}
+        </p>
+      )}
+      {inv && r.findings.length === 0 && <p className="text-xs text-muted">The investigator reported no suspected contract violation.</p>}
+      <div className="space-y-3">
+        {r.findings.map((f) => <FindingRow key={f.finding_id} f={f} files={src.data?.original ?? null} />)}
+      </div>
+      {r.unexplained_failures.length > 0 && (
+        <div className="mt-3 rounded border border-orange/40 bg-orange/5 px-2.5 py-2 text-xs">
+          <div className="font-medium text-orange">Verifier failures no finding explains (missed by the investigator)</div>
+          {r.unexplained_failures.map((u) => <div key={u.test} className="mt-0.5 text-muted"><span className="font-mono">{u.test}</span> ({u.properties.join(", ")}): {u.message}</div>)}
+        </div>
+      )}
+      {inv && inv.dropped.length > 0 && (
+        <Collapsible title={<span className="text-2xs text-faint">{inv.dropped.length} unverifiable model claim(s) dropped</span>}>
+          <ul className="list-disc pl-4 text-2xs text-muted">{inv.dropped.map((d) => <li key={d}>{d}</li>)}</ul>
+        </Collapsible>
+      )}
+    </Card>
+  );
+}
+
+function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | null }) {
+  const st = findingStatus(f.status);
+  const text = files?.[f.file];
+  const lines = useMemo(() => (text ? highlightLines(text, "verilog") : null), [text]);
+  const lo = Math.max(1, f.line_start - 3);
+  const hi = Math.min(lines?.length ?? f.line_end, f.line_end + 3);
+  return (
+    <div className="rounded-md border border-line">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+        <Pill tone={st.tone}>{st.label}</Pill>
+        <span className="min-w-0 flex-1 text-sm font-medium">{f.title}</span>
+        <span className="font-mono text-2xs text-faint">{f.file}:{f.line_start}-{f.line_end}</span>
+      </div>
+      <div className="grid gap-3 p-3 lg:grid-cols-[1.1fr_1fr]">
+        <div className="overflow-x-auto rounded bg-sunken py-1.5 font-mono text-[11.5px] leading-[1.55]">
+          {lines ? lines.slice(lo - 1, hi).map((html, i) => {
+            const n = lo + i;
+            const on = n >= f.line_start && n <= f.line_end;
+            return (
+              <div key={n} className={cx("flex", on && "bg-bad/15")}>
+                <span className="w-9 select-none pr-2 text-right text-faint">{n}</span>
+                <span className="hljs whitespace-pre" dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }} />
+              </div>
+            );
+          }) : <div className="px-2 text-2xs text-faint">Loading source…</div>}
+        </div>
+        <div className="space-y-1.5 text-xs">
+          <div><span className="text-faint">Weakness: </span>{f.weakness_class} · violates {f.violated_properties.join(", ")} · confidence {f.confidence}</div>
+          <div><span className="text-faint">Hypothesis: </span>{f.hypothesis}</div>
+          <div><span className="text-faint">Proposed test: </span>{f.proposed_test}</div>
+          <div><span className="text-faint">Source: </span>{f.is_ai ? `${f.provider} (${f.model})` : `${f.provider}${f.rule ? ` rule ${f.rule}` : ""}, not AI`}</div>
+          <ol className="mt-2 space-y-1 border-l border-line pl-3">
+            {f.history.map((h, i) => (
+              <li key={i} className="text-2xs text-muted"><Pill tone={findingStatus(h.status).tone} className="mr-1.5">{findingStatus(h.status).label}</Pill>{h.why}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VerifyBadge({ report }: { report: VerificationReport }) {
+  const c = { s: report.tests.filter((t) => t.kind === "security"), f: report.tests.filter((t) => t.kind === "functional") };
+  const pass = (xs: TestOutcome[]) => xs.filter((t) => t.status === "pass").length;
+  return (
+    <span className="flex items-center gap-1.5">
+      <Pill tone={report.security_status === "passed" ? "ok" : report.security_status === "failed" ? "bad" : "idle"}>
+        security {pass(c.s)}/{c.s.length}
+      </Pill>
+      <Pill tone={report.functional_status === "passed" ? "ok" : report.functional_status === "failed" ? "bad" : "idle"}>
+        functional {pass(c.f)}/{c.f.length}
+      </Pill>
+    </span>
+  );
+}
+
+function TestTable({ report, selected, onSelect }: { report: VerificationReport; selected: string | null; onSelect: (t: TestOutcome) => void }) {
+  if (report.status === "error" || report.status === "timeout" || report.status === "not_run") {
+    return (
+      <div className="space-y-1 text-xs">
+        <p className="text-bad">Verifier {report.status}: {report.message}</p>
+        {report.safety_issues.map((i, k) => <p key={k} className="text-muted">{i.file}:{i.line} {i.message}</p>)}
+        {report.scope_violations.map((v) => <p key={v} className="text-muted">{v}</p>)}
+      </div>
+    );
+  }
+  const groups: Array<[string, TestOutcome[]]> = [
+    ["Security", report.tests.filter((t) => t.kind === "security")],
+    ["Functional (regression)", report.tests.filter((t) => t.kind === "functional")],
+  ];
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {groups.map(([name, ts]) => (
+        <div key={name}>
+          <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">{name}</div>
+          <ul className="space-y-0.5">
+            {ts.map((t) => (
+              <li key={t.id}>
+                <button type="button" onClick={() => onSelect(t)} disabled={!t.span_ns}
+                        className={cx("flex w-full items-start gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-raised",
+                          selected === t.id && "bg-raised ring-1 ring-accent/40")}>
+                  <Pill tone={testStatus(t.status).tone} className="mt-px">{testStatus(t.status).label}</Pill>
+                  <span className="min-w-0 flex-1">
+                    <span className="font-mono text-2xs text-faint">{t.id}</span> {t.title}
+                    {t.message && <span className="block truncate text-2xs text-bad" title={t.message}>{t.message}</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TestWave({ audit, report, test }: { audit: SecurityAudit; report: VerificationReport; test: TestOutcome }) {
+  if (!report.vcd || !report.dir || !test.span_ns) return null;
+  const ports = audit.record.case.interface.filter((p) => p.port !== "clk").map((p) => `tb.${p.port}`);
+  const [a, b] = test.span_ns;
+  // pad past the window end so the response to the last request (one cycle later) is visible
+  const span: [number, number] = [a, Math.min(b + 30, a + 400)];
+  return (
+    <div className="mt-3 space-y-1">
+      <div className="text-2xs text-faint">
+        Waveform: <span className="font-mono">{test.id}</span> ({report.label}), {span[0]}–{span[1]} ns from the verifier's VCD
+        {b + 30 > span[1] ? " (first 400 ns of the window)" : ""}
+      </div>
+      <SecurityWave auditId={audit.id} vcdPath={`${report.dir}/${report.vcd}`} span={span} signals={ports}
+                    highlight={["read_grant", "read_data", "access_denied"]} />
+    </div>
+  );
+}
+
+function Commands({ report }: { report: VerificationReport }) {
+  return (
+    <Collapsible title={<span className="text-xs">Exact commands, tool versions and hashes</span>}>
+      <ul className="space-y-1">
+        {report.commands.map((c, i) => (
+          <li key={i} className="text-2xs">
+            <span className="text-faint">{c.step} · exit {c.exit_code ?? "–"} · {c.duration_s.toFixed(1)} s{c.timed_out ? " · timed out" : ""}</span>
+            <Pre maxH="max-h-24" className="mt-0.5">{"$ " + c.command}</Pre>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 space-y-0.5 text-2xs text-muted">
+        {Object.entries(report.tool_versions).map(([k, v]) => <div key={k}>{k}: {v}</div>)}
+        {Object.entries(report.trusted_hashes).map(([k, v]) => <div key={k} className="break-all">trusted {k}: <span className="font-mono">{v}</span></div>)}
+        {Object.entries(report.source_hashes).map(([k, v]) => <div key={k} className="break-all">candidate {k}: <span className="font-mono">{v}</span></div>)}
+      </div>
+    </Collapsible>
+  );
+}
+
+function FormalCard({ title, f }: { title: string; f: NonNullable<SecurityAudit["record"]["formal_original"]> }) {
+  const st = formalStatus(f.status);
+  const sigs = f.counterexample.length ? Object.keys(f.counterexample[0].signals).filter((k) => k !== "clk") : [];
+  return (
+    <Card title={title} actions={<Pill tone={st.tone}>{st.label}</Pill>}>
+      <p className="text-xs text-fg">{f.message}</p>
+      <p className="mt-1 text-2xs text-faint">{f.engine} · properties {f.properties.join(", ")} · assumptions: {f.assumptions.join("; ")}</p>
+      {f.counterexample.length > 0 && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="text-2xs">
+            <thead><tr><th className="pr-3 text-left font-normal text-faint">step</th>{sigs.map((s) => <th key={s} className="px-2 font-mono font-normal text-faint">{s}</th>)}</tr></thead>
+            <tbody>
+              {f.counterexample.map((st2) => (
+                <tr key={st2.step}><td className="pr-3 text-faint">{st2.step}</td>{sigs.map((s) => <td key={s} className="px-2 text-center font-mono">{st2.signals[s]}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-1 text-2xs text-muted">Inputs per clock step of the shortest violating trace found by the solver.</p>
+        </div>
+      )}
+      {f.command && <Pre maxH="max-h-20" className="mt-2 text-2xs">{"$ " + f.command.command}</Pre>}
+    </Card>
+  );
+}
+
+function RepairCard({ audit, attempt: a, selected, onSelect }: { audit: SecurityAudit; attempt: RepairAttempt; selected: string | null;
+  onSelect: (t: TestOutcome) => void }) {
+  const [mode, setMode] = useState<DiffMode>("unified");
+  const verdictTone = a.verdict === "verified" ? "ok" : a.verdict === "no_patch" ? "orange" : "bad";
+  const verdictLabel = a.agent === "reference"
+    ? (a.verdict === "verified" ? "reference passes (harness validated)" : `reference ${a.verdict}`)
+    : ({ verified: "repaired + verified", failed: "rejected by verifier", no_patch: "no patch", rejected_scope: "scope violation" } as Record<string, string>)[a.verdict] ?? a.verdict;
+  return (
+    <Card title={`Repair attempt ${a.attempt} · ${a.label}`} actions={<Pill tone={verdictTone}>{verdictLabel}</Pill>}>
+      {a.agent === "reference" && (
+        <p className="mb-2 rounded border border-violet/40 bg-violet/5 px-2 py-1.5 text-xs text-violet">
+          Human-written reference fix, used only to show the trusted harness accepts a correct repair. Not an agent repair.
+        </p>
+      )}
+      {a.reason && <p className="mb-2 text-xs text-muted">{a.reason}</p>}
+      {a.final_text && <p className="mb-2 whitespace-pre-line text-xs text-fg">{a.final_text}</p>}
+      <div className="mb-2 flex flex-wrap gap-x-4 gap-y-0.5 text-2xs text-faint">
+        <span>agent status: {a.status}</span>
+        {a.model && <span>model: {a.model}</span>}
+        {a.session_id && <span>droid session: <span className="font-mono">{a.session_id}</span></span>}
+        {a.duration_s != null && <span>{a.duration_s.toFixed(1)} s</span>}
+        {a.changed_files.length > 0 && <span>changed: {a.changed_files.join(", ")}</span>}
+      </div>
+      {a.scope_violations.length > 0 && <p className="mb-2 text-xs text-bad">Scope violations: {a.scope_violations.join("; ")}</p>}
+      {(a.denied_actions?.length ?? 0) > 0 && <p className="mb-2 text-2xs text-warn">Refused agent actions: {a.denied_actions!.join("; ")}</p>}
+      {a.diff ? (
+        <div className="rounded border border-line">
+          <div className="flex items-center justify-between border-b border-line px-2 py-1">
+            <span className="text-2xs text-faint">patch.diff</span>
+            <span className="flex items-center gap-2">
+              <CopyButton text={a.diff} label="copy patch" />
+              <Segmented value={mode} onChange={setMode} options={[{ value: "unified", label: "Unified" }, { value: "split", label: "Split" }]} />
+            </span>
+          </div>
+          <DiffView diff={a.diff} mode={mode} lang="verilog" />
+        </div>
+      ) : <p className="text-xs text-muted">No diff.</p>}
+      {a.verification && (
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-2xs font-semibold uppercase tracking-wide text-faint">Independent retest</span>
+            <VerifyBadge report={a.verification} />
+          </div>
+          <TestTable report={a.verification} selected={selected} onSelect={onSelect} />
+        </div>
+      )}
+      {a.formal && (
+        <p className="mt-2 text-xs"><span className="text-faint">Formal on the patch: </span>
+          <Pill tone={formalStatus(a.formal.status).tone}>{formalStatus(a.formal.status).label}</Pill> <span className="text-muted">{a.formal.message}</span></p>
+      )}
+      <ArtifactLinks audit={audit} paths={[`${a.dir}/workspace/TASK.md`, ...(a.trace ? [`${a.dir}/${a.trace}`] : [])]} />
+    </Card>
+  );
+}
+
+function ArtifactLinks({ audit, paths }: { audit: SecurityAudit; paths: string[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const res = useResource(open ? `${audit.id}:${open}` : null, 0, (sig) => securityApi.file(audit.id, open!, sig));
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap gap-2">
+        {paths.map((p) => (
+          <button key={p} type="button" onClick={() => setOpen((o) => (o === p ? null : p))}
+                  className={cx("rounded px-1.5 py-0.5 font-mono text-2xs hover:bg-raised", open === p ? "text-accent" : "text-faint")}>
+            {p.split("/").slice(-1)[0]}
+          </button>
+        ))}
+      </div>
+      {open && (res.error ? <ErrorNote error={res.error} /> : res.data ? <Pre className="mt-1 text-2xs">{res.data.text}</Pre> : null)}
+    </div>
+  );
+}
+
+function EvidenceCard({ audit }: { audit: SecurityAudit }) {
+  const ev = audit.record.evidence;
+  if (!ev) return null;
+  return (
+    <Card title="Evidence record" actions={<span className="text-2xs text-faint">{ev.artifacts.length} artifacts · sha256</span>}>
+      <ArtifactLinks audit={audit} paths={["report.md", "audit.json", "reproduce/verify.log", "investigate/prompt.txt"]} />
+      <Collapsible title={<span className="text-xs">All artifacts with hashes</span>}>
+        <ul className="space-y-0.5 text-2xs">
+          {ev.artifacts.map((x) => (
+            <li key={x.path} className="flex gap-2"><span className="min-w-0 flex-1 truncate font-mono text-muted">{x.path}</span>
+              <span className="font-mono text-faint">{x.sha256.slice(0, 16)}…</span><span className="w-16 text-right text-faint">{x.bytes} B</span></li>
+          ))}
+        </ul>
+      </Collapsible>
+    </Card>
+  );
+}

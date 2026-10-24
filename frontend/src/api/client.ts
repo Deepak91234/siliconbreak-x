@@ -118,7 +118,7 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), opts.timeoutMs ?? 30_000);
   const onAbort = () => controller.abort(opts.signal?.reason);

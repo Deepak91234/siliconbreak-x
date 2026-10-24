@@ -307,6 +307,10 @@ function ProjectPicker({ projectId }: { projectId: string | null }) {
       <Button size="sm" variant={projectId ? "secondary" : "ghost"} onClick={() => store.selectProject(null)} title="Start a new design">
         + New
       </Button>
+      <Button size="sm" variant="ghost" title="New security audit (SiliconBreak X)"
+              onClick={() => { store.selectProject(null); store.setTab("security"); }}>
+        Audit
+      </Button>
     </div>
   );
 }

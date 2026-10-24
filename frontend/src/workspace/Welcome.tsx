@@ -8,6 +8,7 @@
 import type { ReactNode } from "react";
 import { cx } from "../components/ui";
 import { setUi } from "../lib/ui";
+import { SecurityStart } from "../security/SecurityPanel";
 import { useAppState } from "../store/store";
 
 export const EXAMPLE_PROJECTS: Array<{ title: string; blurb: string; prompt: string; tag: string }> = [
@@ -69,6 +70,11 @@ export function Welcome() {
             </button>
           ))}
         </div>
+      </section>
+
+      <section aria-label="Hardware security audit">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-faint">Or audit hardware security (SiliconBreak X)</h2>
+        <SecurityStart compact />
       </section>
 
       <section aria-label="How a build works">

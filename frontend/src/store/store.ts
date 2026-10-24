@@ -21,6 +21,7 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import { api, ApiError, errorMessage, onReachability } from "../api/client";
 import { EventStream, eventsUrl } from "../api/events";
 import type { Approval, CLEvent, Environment, HardwareStatus, RunOptions, VisionSessionState } from "../api/types";
+import { securityApi, type SecurityAudit } from "../api/security";
 import {
   applyEvents,
   initialState,
@@ -36,6 +37,7 @@ import {
   type AppState,
   type Selection,
   type TabKey,
+  putSecurityAudits,
 } from "./reducer";
 
 const SEQ_KEY = "circuitloop:lastSeq";
@@ -538,6 +540,27 @@ export class AppStore {
 
   putVisionSession(sess: VisionSessionState): void {
     this.update((s) => ({ ...s, vision: { ...s.vision, [sess.id]: sess } }));
+  }
+
+  // ---------------------------------------------------------- SiliconBreak X
+  async loadAudits(projectId?: string): Promise<SecurityAudit[]> {
+    const list = await securityApi.audits(projectId);
+    this.update((s) => putSecurityAudits(s, list));
+    return list;
+  }
+
+  putAudit(audit: SecurityAudit): void {
+    this.update((s) => putSecurityAudits(s, [audit]));
+  }
+
+  /** Start an audit of a security case; selects its project and opens the Security tab. */
+  async startSecurityAudit(caseId: string, opts: { investigator?: string; repair_agent?: string } = {}): Promise<SecurityAudit> {
+    const res = await securityApi.startAudit({ case_id: caseId, ...opts });
+    this.putAudit(res.audit);
+    await this.loadProjects();
+    this.selectProject(res.project.id);
+    this.setTab("security");
+    return res.audit;
   }
 }
 

@@ -87,6 +87,11 @@ const RUN: Record<string, StatusInfo> = {
   failed: { tone: "bad", label: "failed" },
   cancelled: { tone: "muted", label: "cancelled" },
   unsupported: { tone: "orange", label: "unsupported" },
+  reproduced: { tone: "orange", label: "vulnerability reproduced" },
+  repaired_verified: { tone: "ok", label: "repaired + verified" },
+  repair_failed: { tone: "bad", label: "repair failed" },
+  no_violation_found: { tone: "info", label: "no violation reproduced" },
+  error: { tone: "bad", label: "error" },
 };
 export const runStatus = (s: string | null | undefined) => lookup(RUN, s);
 
@@ -177,3 +182,45 @@ export const revisionKind = (s: string | null | undefined) => lookup(KIND, s);
 export function boolTone(b: boolean | null | undefined): Tone {
   return b === true ? "ok" : b === false ? "bad" : "idle";
 }
+
+const FINDING: Record<string, StatusInfo> = {
+  suspected: { tone: "warn", label: "suspected" },
+  reproduced: { tone: "orange", label: "reproduced" },
+  patch_proposed: { tone: "info", label: "patch proposed" },
+  repaired_verified: { tone: "ok", label: "repaired + verified" },
+  repair_failed: { tone: "bad", label: "repair failed" },
+  false_positive: { tone: "muted", label: "false positive" },
+  inconclusive: { tone: "violet", label: "inconclusive" },
+};
+export const findingStatus = (s: string | null | undefined) => lookup(FINDING, s);
+
+const TESTSTATUS: Record<string, StatusInfo> = {
+  pass: { tone: "ok", label: "pass" },
+  fail: { tone: "bad", label: "fail" },
+  not_run: { tone: "idle", label: "not run" },
+  passed: { tone: "ok", label: "passed" },
+  failed: { tone: "bad", label: "failed" },
+  error: { tone: "bad", label: "error" },
+  timeout: { tone: "bad", label: "timeout" },
+};
+export const testStatus = (s: string | null | undefined) => lookup(TESTSTATUS, s);
+
+const FORMAL: Record<string, StatusInfo> = {
+  proven: { tone: "ok", label: "proven" },
+  counterexample: { tone: "bad", label: "counterexample" },
+  bounded: { tone: "violet", label: "bounded only" },
+  error: { tone: "bad", label: "error" },
+  not_run: { tone: "idle", label: "not run" },
+};
+export const formalStatus = (s: string | null | undefined) => lookup(FORMAL, s);
+
+const HEALTH: Record<string, StatusInfo> = {
+  connected: { tone: "ok", label: "connected" },
+  verified: { tone: "ok", label: "verified" },
+  configured: { tone: "info", label: "configured" },
+  unverified: { tone: "warn", label: "unverified" },
+  unavailable: { tone: "orange", label: "unavailable" },
+  disconnected: { tone: "idle", label: "disconnected" },
+  failed: { tone: "bad", label: "failed" },
+};
+export const healthState = (s: string | null | undefined) => lookup(HEALTH, s);

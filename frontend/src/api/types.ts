@@ -17,12 +17,21 @@ export const STAGE_KEYS = [
 ] as const;
 export type StageKey = (typeof STAGE_KEYS)[number];
 
+/** Security audit runs (backend/security/orchestrator.SECURITY_STAGES), in display order. */
+export const SECURITY_STAGE_KEYS = [
+  "contract", "index", "investigate", "reproduce", "formal", "repair", "retest", "evidence",
+] as const;
+
 export const STAGE_STATUSES = [
   "pending", "running", "passed", "failed", "skipped", "blocked", "unavailable", "inconclusive", "cancelled",
 ] as const;
 export type StageStatus = (typeof STAGE_STATUSES)[number];
 
-export const RUN_STATUSES = ["running", "waiting", "passed", "passed_sim_only", "failed", "cancelled", "unsupported"] as const;
+export const RUN_STATUSES = [
+  "running", "waiting", "passed", "passed_sim_only", "failed", "cancelled", "unsupported",
+  // SiliconBreak X audit outcomes
+  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error",
+] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const APPROVAL_STATUSES = ["pending", "approved", "denied", "executed", "failed", "expired"] as const;

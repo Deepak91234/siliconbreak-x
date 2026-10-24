@@ -20,10 +20,12 @@ import type {
   Stage,
   VisionSessionState,
 } from "../api/types";
-import { STAGE_KEYS } from "../api/types";
+import { SECURITY_STAGE_KEYS, STAGE_KEYS } from "../api/types";
+import type { SecurityAudit } from "../api/security";
 import type { SocketInfo } from "../api/events";
 
-export type TabKey = "pipeline" | "verilog" | "simulation" | "diagram" | "vivado" | "hardware" | "vision" | "history";
+export type TabKey = "pipeline" | "verilog" | "simulation" | "diagram" | "vivado" | "hardware" | "vision" | "history"
+  | "security" | "bench";
 
 export interface LogLine {
   seq: number;
@@ -76,6 +78,8 @@ export interface AppState {
   logs: Record<string, LogLine[]>;
   revisionVersions: Record<string, number>;
   vision: Record<string, VisionSessionState>;
+  /** SiliconBreak X audits by id (REST + security.updated events). */
+  security: Record<string, SecurityAudit>;
   selection: Selection;
   lastEventAt: number | null;
   /** GET /api/faults; null until loaded, [] when the backend offers none. */
@@ -103,6 +107,7 @@ export function initialState(): AppState {
     logs: {},
     revisionVersions: {},
     vision: {},
+    security: {},
     selection: { projectId: null, revisionId: null, runId: null, tab: "pipeline", compareAgainst: null },
     lastEventAt: null,
     faults: null,
@@ -115,6 +120,7 @@ export function initialState(): AppState {
 /** Run statuses after which the orchestrator never sets running/waiting again. */
 export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
   "passed", "passed_sim_only", "failed", "cancelled", "unsupported",
+  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error",
 ]);
 
 export function isRunActive(run: Pick<Run, "status"> | null | undefined): boolean {
@@ -152,9 +158,13 @@ export function upsertById<T extends { id: string }>(list: T[], item: T, cmp?: (
 }
 
 /** Keep stages in the contract's display order even if the server sends a partial list. */
+const SECURITY_ONLY_KEYS = new Set(["contract", "index", "investigate", "reproduce", "formal", "retest", "evidence"]);
+
 export function sortStages(stages: Stage[]): Stage[] {
+  // security audit runs share the key "repair" with design runs, so pick the key order by run kind
+  const keys: readonly string[] = stages.some((s) => SECURITY_ONLY_KEYS.has(s.key)) ? SECURITY_STAGE_KEYS : STAGE_KEYS;
   const order = (k: string) => {
-    const i = (STAGE_KEYS as readonly string[]).indexOf(k);
+    const i = keys.indexOf(k);
     return i < 0 ? 999 : i;
   };
   return stages.slice().sort((a, b) => order(a.key) - order(b.key));
@@ -200,6 +210,9 @@ class Draft {
   }
   get vision() {
     return this.cow("vision");
+  }
+  get security() {
+    return this.cow("security");
   }
 
   appendLog(runKey: string, line: LogLine): void {
@@ -372,6 +385,11 @@ function applyOne(d: Draft, e: CLEvent, opts: ApplyOptions): void {
       if (hw) d.s.hardware = hw;
       return;
     }
+    case "security.updated": {
+      const audit = asObject(data.audit) as SecurityAudit | null;
+      if (audit && typeof audit.id === "string") d.security[audit.id] = audit;
+      return;
+    }
     case "vision.updated": {
       const sess = asObject(data.session) as VisionSessionState | null;
       if (sess && typeof sess.id === "string") d.vision[sess.id] = sess;
@@ -524,4 +542,11 @@ export function runForRevision(state: AppState, projectId: string | null, revisi
     }
   }
   return best;
+}
+
+export function putSecurityAudits(state: AppState, audits: SecurityAudit[]): AppState {
+  if (!audits.length) return state;
+  const security = { ...state.security };
+  for (const a of audits) security[a.id] = a;
+  return { ...state, security };
 }

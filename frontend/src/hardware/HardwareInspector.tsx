@@ -23,6 +23,7 @@ import { highlight, setUi, useUi, type BoardMode } from "../lib/ui";
 import { useResource } from "../lib/useResource";
 import { effectiveRevisionId } from "../store/reducer";
 import { useAppState, useStore } from "../store/store";
+import { ThreeDBoundary, ThreeDUnavailable, webglAvailable } from "./WebGLFallback";
 
 const Board3D = lazy(() => import("../board/Board3D"));
 
@@ -120,16 +121,23 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
 
         <ProvenanceBar mode={mode} source={visual.ledSource} guide={guide} />
 
-        <div className={cx(view === "3d" ? "h-72" : "")}>
-          {view === "2d" ? (
+        {(() => {
+          const board2d = (
             <Board2D model={model} visual={visual} guide={comps} onPress={virtual.press} onToggle={virtual.toggle}
                      onHover={(id) => (id && comps.has(id) ? highlight([id], "board") : ext.length && highlight([], null))} />
-          ) : (
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted"><Spinner className="mr-2 h-4 w-4" />Loading 3D view…</div>}>
-              <Board3D model={model} visual={visual} guide={comps} onPress={virtual.press} onToggle={virtual.toggle} />
-            </Suspense>
-          )}
-        </div>
+          );
+          if (view === "2d") return <div>{board2d}</div>;
+          if (!webglAvailable()) return <div><ThreeDUnavailable reason="this browser could not create a WebGL context" />{board2d}</div>;
+          return (
+            <ThreeDBoundary fallback={(e) => <div><ThreeDUnavailable reason={e.message} />{board2d}</div>}>
+              <div className="h-72">
+                <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted"><Spinner className="mr-2 h-4 w-4" />Loading 3D view…</div>}>
+                  <Board3D model={model} visual={visual} guide={comps} onPress={virtual.press} onToggle={virtual.toggle} />
+                </Suspense>
+              </div>
+            </ThreeDBoundary>
+          );
+        })()}
 
         {mode === "preview" && (
           <div className="flex items-center gap-2 text-xs">

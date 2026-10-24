@@ -31,6 +31,12 @@ class AuditRequest(BaseModel):
     max_attempts: Optional[int] = None
 
 
+class BenchRequest(BaseModel):
+    case_ids: Optional[list[str]] = None
+    arms: Optional[list[str]] = None
+    max_attempts: int = 3
+
+
 class RepairRequest(BaseModel):
     agent: Literal["auto", "factory", "model", "reference"]
 
@@ -151,3 +157,35 @@ async def audit_waveform(audit_id: str, path: str = Query(..., max_length=300), 
         return vcd_to_json(p, signals=sig, start=start, end=end)
     except VcdError as e:
         raise HTTPException(422, str(e))
+
+
+# ---------------------------------------------------------------- SiliconBench
+
+@router.get("/bench/cases")
+async def bench_cases() -> list[dict]:
+    from backend.security.bench import ARM_LABELS
+
+    return [c.public_view() | {"arms": ARM_LABELS} for c in list_cases()]
+
+
+@router.post("/bench/runs")
+async def start_bench(req: BenchRequest) -> dict:
+    from backend.security import bench
+
+    try:
+        return bench.start(req.case_ids, req.arms, req.max_attempts)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/bench/runs")
+async def list_bench() -> list[dict]:
+    return [{k: v for k, v in b.items() if k != "dir"} for b in store.list_bench_runs()]
+
+
+@router.get("/bench/runs/{bench_id}")
+async def get_bench(bench_id: str) -> dict:
+    b = store.get_bench_run(bench_id)
+    if b is None:
+        raise HTTPException(404, "bench run not found")
+    return {k: v for k, v in b.items() if k != "dir"}

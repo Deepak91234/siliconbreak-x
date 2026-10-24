@@ -37,6 +37,8 @@ import { DiagramView } from "./workspace/DiagramView";
 import { RevisionChanges } from "./workspace/RevisionChanges";
 import { CurrentAction, Timeline } from "./workspace/Timeline";
 import { Welcome } from "./workspace/Welcome";
+import { SecurityPanel } from "./security/SecurityPanel";
+import { SiliconBench } from "./security/SiliconBench";
 
 type Theme = "dark" | "light";
 const THEME_KEY = "circuitloop.theme";
@@ -83,6 +85,8 @@ function useWidth(): number {
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "pipeline", label: "Agent" },
+  { key: "security", label: "Security" },
+  { key: "bench", label: "SiliconBench" },
   { key: "verilog", label: "Verilog" },
   { key: "simulation", label: "Simulation" },
   { key: "diagram", label: "Diagram" },
@@ -157,7 +161,7 @@ function CenterContent() {
   const latestRun = useAppState((s) => (latestRunId ? s.runs[latestRunId] ?? null : null));
   const run = revRun ?? latestRun;
 
-  if (!projectId && tab !== "history" && tab !== "hardware") return <Welcome />;
+  if (!projectId && tab !== "history" && tab !== "hardware" && tab !== "security" && tab !== "bench") return <Welcome />;
   let body: ReactNode;
   switch (tab) {
     case "pipeline":
@@ -174,6 +178,8 @@ function CenterContent() {
     case "vivado": body = <VivadoTab revisionId={revisionId} run={run} />; break;
     case "hardware": body = <HardwareTab revisionId={revisionId} run={run} />; break;
     case "vision": body = <VisionTab revisionId={revisionId} />; break;
+    case "security": body = <SecurityPanel />; break;
+    case "bench": body = <SiliconBench />; break;
     case "history": body = <div className="space-y-4"><RevisionChanges revisionId={revisionId} /><HistoryTab /></div>; break;
   }
   return <div className="min-w-0">{body}</div>;
