@@ -11,6 +11,17 @@ Every status in the dashboard comes from a real tool run: the LLM, Verilator,
 Vivado, openFPGALoader or hw_server, or OpenCV. When a tool or the board is
 missing, the stage says **unavailable**; it never reports a pass.
 
+### SiliconBreak X: hardware-security audits
+
+The **Security** and **SiliconBench** tabs audit RTL against a written security
+contract: an investigator (Bitdeer, Claude, or clearly labelled offline rules)
+proposes suspected weaknesses, a trusted verifier (Verilator tests with a
+per-run nonce, plus Yosys formal checks) independently reproduces them, a repair
+agent (Factory Droid or a model) edits an isolated copy, and the verifier
+retests the patch. Only verifier results count as evidence. See
+[docs/siliconbreak.md](docs/siliconbreak.md) for the architecture, trust
+boundary, API, demo script and what still needs keys or hardware.
+
 ## Quick start
 
 ```bash

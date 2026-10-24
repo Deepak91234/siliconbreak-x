@@ -1,0 +1,59 @@
+{
+  "case_id": "zeroize_incomplete",
+  "title": "Incomplete key zeroization",
+  "source_kind": "research_injected",
+  "provenance": "Locally authored key register with an injected defect (zeroize erases only the low byte), modelled on CWE-1239. Written for SiliconBreak X; not a historical bug in any product.",
+  "cwe": ["CWE-1239", "CWE-226"],
+  "repository": null,
+  "commit": null,
+  "license": "Same license as this repository (authored here)",
+  "top_module": "key_vault",
+  "editable": ["rtl/key_vault.v"],
+  "description": "A 16-bit key register that feeds a crypto engine. Zeroize must erase every key bit; zeroize wins over a simultaneous load.",
+  "interface": [
+    {"port": "clk", "dir": "input", "width": 1, "text": "clock"},
+    {"port": "reset", "dir": "input", "width": 1, "text": "synchronous, active-high reset"},
+    {"port": "load", "dir": "input", "width": 1, "text": "capture key_in and mark the key valid"},
+    {"port": "key_in", "dir": "input", "width": 16, "text": "key to load"},
+    {"port": "zeroize", "dir": "input", "width": 1, "text": "erase the key (wins over load)"},
+    {"port": "key_out", "dir": "output", "width": 16, "text": "key presented to the crypto engine"},
+    {"port": "key_valid", "dir": "output", "width": 1, "text": "a key is loaded"}
+  ],
+  "security_contract": {
+    "summary": "Zeroization must remove all key material; no key bits may remain once the key is invalid.",
+    "properties": [
+      {"id": "P-ZEROIZE", "text": "One cycle after zeroize, key_out == 0 and key_valid == 0 (zeroize wins over a simultaneous load)."},
+      {"id": "P-NO-RESIDUE", "text": "Whenever key_valid == 0, key_out == 0: no part of a previous key remains visible."}
+    ]
+  },
+  "functional_contract": [
+    {"id": "F-1", "text": "Reset clears the key and key_valid."},
+    {"id": "F-2", "text": "load captures key_in into key_out and sets key_valid; the key is held until zeroize or reset."},
+    {"id": "F-3", "text": "After zeroize a new key can be loaded."}
+  ],
+  "verification": {
+    "testbench": "tests/tb_key_vault.sv",
+    "tb_top": "tb",
+    "timeout_s": 120,
+    "tests": [
+      {"id": "F-RESET", "kind": "functional", "properties": ["F-1"], "title": "Reset clears the key"},
+      {"id": "F-LOAD", "kind": "functional", "properties": ["F-2"], "title": "Load captures and holds the key"},
+      {"id": "F-RELOAD", "kind": "functional", "properties": ["F-3"], "title": "Reload after zeroize"},
+      {"id": "F-RANDOM-MODEL", "kind": "functional", "properties": ["F-1", "F-2", "F-3"], "title": "3000 random cycles: valid keys match the contract model"},
+      {"id": "S-ZEROIZE", "kind": "security", "properties": ["P-ZEROIZE", "P-NO-RESIDUE"], "title": "Zeroize erases the whole key"},
+      {"id": "S-ZEROIZE-WINS", "kind": "security", "properties": ["P-ZEROIZE"], "title": "Zeroize wins over a simultaneous load"},
+      {"id": "S-ZEROIZE-HOLD", "kind": "security", "properties": ["P-NO-RESIDUE"], "title": "No key bits reappear after zeroize"},
+      {"id": "S-RANDOM-RESIDUE", "kind": "security", "properties": ["P-NO-RESIDUE"], "title": "No residue on 3000 random cycles"}
+    ]
+  },
+  "formal": {"wrapper": "tests/formal_props.v", "top": "key_vault_formal", "properties": ["P-ZEROIZE", "P-NO-RESIDUE"], "max_steps": 20},
+  "ground_truth": {
+    "file": "rtl/key_vault.v",
+    "lines": [23, 25],
+    "properties": ["P-ZEROIZE", "P-NO-RESIDUE"],
+    "weakness": "CWE-1239",
+    "summary": "The zeroize branch clears only key_q[7:0]; the upper key byte survives."
+  },
+  "reference_fix": {"files": {"rtl/key_vault.v": "reference/key_vault.v"}, "author": "human-written reference for harness validation"},
+  "board": null
+}

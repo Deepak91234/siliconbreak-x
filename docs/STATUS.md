@@ -16,6 +16,10 @@
 | RTL safety checker | blocks `$system`, every `$c` variant, file I/O, `` `include ``/`` `define ``, DPI, `bind`, extra modules, derived clocks before any Verilator run |
 | Dashboard | live environment bar, chat, 14-stage pipeline, Verilog, Simulation, Vivado, Hardware tabs checked in the browser against real runs |
 
+## SiliconBreak X (security extension, branch feature/siliconbreak-x)
+
+Verified with real Verilator 5.052 and Yosys 0.69: three security cases with valid harnesses (vulnerable fails its security tests, reference passes everything, formal counterexample then proof); the full audit pipeline through the API and the Security tab (offline rules, reproduction, formal, evidence, harness validation); SiliconBench from the UI (harness 3/3, reproduction 3/3, formal 3/3, offline-rules detection 1/3; model and Droid arms "not run" without keys). Bitdeer, Claude and Factory Droid paths are implemented and unit-tested with fakes but have not run against the real services. Details and remaining work: [siliconbreak.md](siliconbreak.md).
+
 ## Dashboard (redesign, browser-validated)
 
 Validated in a browser against a real backend at 1440 px, 1024 px and 375 px: the welcome workspace with example cards that fill the real prompt; a live traffic-light run streaming over the WebSocket through every stage to a validated bitstream, with detection honestly `unavailable`; the 2D twin highlighting a guide step's controls; a scenario replay animating LEDs from the Verilator trace; the virtual FPGA (Demo 2 wraps 0→15 after 1 s, BTNC holds 0000, and it resumes after release); the 3D view rendering; the block diagram; the revision comparison; Verilog search; and presentation mode with a labelled replay. Panels resize, and below 1280 px and 900 px they become drawers with no horizontal overflow.

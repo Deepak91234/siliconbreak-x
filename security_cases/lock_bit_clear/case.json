@@ -1,0 +1,60 @@
+{
+  "case_id": "lock_bit_clear",
+  "title": "Software-clearable lock bit",
+  "source_kind": "research_injected",
+  "provenance": "Locally authored configuration-lock register with an injected defect (lock bit writable to 0), modelled on CWE-1231. Written for SiliconBreak X; not a historical bug in any product.",
+  "cwe": ["CWE-1231"],
+  "repository": null,
+  "commit": null,
+  "license": "Same license as this repository (authored here)",
+  "top_module": "cfg_lock_reg",
+  "editable": ["rtl/cfg_lock_reg.v"],
+  "description": "An 8-bit configuration register protected by a software-set LOCK bit in a CONTROL register. Once locked, configuration must stay frozen until reset.",
+  "interface": [
+    {"port": "clk", "dir": "input", "width": 1, "text": "clock"},
+    {"port": "reset", "dir": "input", "width": 1, "text": "synchronous, active-high reset"},
+    {"port": "wr_en", "dir": "input", "width": 1, "text": "write strobe"},
+    {"port": "wr_addr", "dir": "input", "width": 1, "text": "0 = CONFIG, 1 = CONTROL (bit 0 = LOCK)"},
+    {"port": "wr_data", "dir": "input", "width": 8, "text": "write data"},
+    {"port": "config_out", "dir": "output", "width": 8, "text": "current configuration value"},
+    {"port": "locked", "dir": "output", "width": 1, "text": "lock state"}
+  ],
+  "security_contract": {
+    "summary": "Once software sets LOCK, neither the lock nor the configuration can be changed until reset.",
+    "properties": [
+      {"id": "P-LOCK-STICKY", "text": "After LOCK is set, locked stays 1 until reset; no register write can clear it."},
+      {"id": "P-LOCK-FREEZE", "text": "While locked, writes to CONFIG do not change config_out."}
+    ]
+  },
+  "functional_contract": [
+    {"id": "F-1", "text": "Reset clears config_out to 0x00 and locked to 0; writes during reset are ignored."},
+    {"id": "F-2", "text": "While unlocked, a CONFIG write updates config_out on the same clock edge."},
+    {"id": "F-3", "text": "Writing CONTROL with bit 0 = 1 sets the lock; reset clears it again."}
+  ],
+  "verification": {
+    "testbench": "tests/tb_cfg_lock_reg.sv",
+    "tb_top": "tb",
+    "timeout_s": 120,
+    "tests": [
+      {"id": "F-RESET", "kind": "functional", "properties": ["F-1"], "title": "Reset clears the registers"},
+      {"id": "F-WRITE-UNLOCKED", "kind": "functional", "properties": ["F-2"], "title": "CONFIG writable while unlocked"},
+      {"id": "F-LOCK-SET", "kind": "functional", "properties": ["F-3"], "title": "LOCK can be set"},
+      {"id": "F-RESET-UNLOCKS", "kind": "functional", "properties": ["F-1", "F-3"], "title": "Reset clears the lock"},
+      {"id": "F-RANDOM-MODEL", "kind": "functional", "properties": ["F-1", "F-2", "F-3"], "title": "3000 random cycles match the contract model while unlocked"},
+      {"id": "S-LOCKED-WRITE", "kind": "security", "properties": ["P-LOCK-FREEZE"], "title": "CONFIG write ignored while locked"},
+      {"id": "S-LOCK-CLEAR", "kind": "security", "properties": ["P-LOCK-STICKY"], "title": "Software cannot clear LOCK"},
+      {"id": "S-CLEAR-THEN-WRITE", "kind": "security", "properties": ["P-LOCK-STICKY", "P-LOCK-FREEZE"], "title": "Clearing LOCK does not reopen CONFIG"},
+      {"id": "S-RANDOM-LOCK", "kind": "security", "properties": ["P-LOCK-STICKY", "P-LOCK-FREEZE"], "title": "Lock properties hold on 3000 random cycles"}
+    ]
+  },
+  "formal": {"wrapper": "tests/formal_props.v", "top": "cfg_lock_reg_formal", "properties": ["P-LOCK-STICKY", "P-LOCK-FREEZE"], "max_steps": 20},
+  "ground_truth": {
+    "file": "rtl/cfg_lock_reg.v",
+    "lines": [28, 31],
+    "properties": ["P-LOCK-STICKY", "P-LOCK-FREEZE"],
+    "weakness": "CWE-1231",
+    "summary": "A CONTROL write assigns wr_data[0] to the lock, so writing 0 unlocks the register."
+  },
+  "reference_fix": {"files": {"rtl/cfg_lock_reg.v": "reference/cfg_lock_reg.v"}, "author": "human-written reference for harness validation"},
+  "board": null
+}

@@ -162,3 +162,12 @@ Server → client JSON:
 ## Errors
 Non-2xx responses: `{"detail": "human readable message"}`. 404 unknown id, 409 state conflict
 (e.g. Vivado busy, no bitstream, approval already decided), 422 validation errors.
+
+## SiliconBreak X (security) endpoints
+
+Documented in [siliconbreak.md](siliconbreak.md#api): `/api/security/health`, `/api/security/cases`,
+`/api/security/audits` (create, list, get, repair, file, sources, waveform) and `/api/bench/runs`.
+Audits are ordinary runs (`trigger: "security_audit"` or `"security_repair"`) whose stages are
+`contract, index, investigate, reproduce, formal, repair, retest, evidence`; the event stream adds
+`security.updated` `{audit}` and `bench.updated` `{bench}`. Run statuses for audits:
+`reproduced`, `repaired_verified`, `repair_failed`, `no_violation_found`, `error`, `cancelled`.

@@ -366,3 +366,23 @@ async def test_audit_pipeline_without_keys_then_model_repair(client, monkeypatch
     a = await _wait(c, aid)
     assert a["status"] == "repair_failed"
     assert all(x["verdict"] == "failed" for x in a["record"]["repairs"][-3:] if x["agent"] == "model" and x.get("diff") and "1'b0" in x["diff"])
+
+
+# ------------------------------------------------------- every case is valid
+
+@pytest.mark.verilator
+@needs_yosys
+@pytest.mark.parametrize("case_id", [c.case_id for c in __import__("backend.security.cases", fromlist=["list_cases"]).list_cases()])
+async def test_every_case_harness_is_valid(case_id, tmp_path):
+    """A case counts only if its vulnerable source fails a security test (functional tests passing),
+    its reference fix passes everything, and formal agrees (counterexample -> proof)."""
+    c = get_case(case_id)
+    rel = c.editable[0]
+    vul = await verify_sources(c, {rel: c.path(rel)}, tmp_path / "v", label="vulnerable")
+    assert vul.status == "failed" and vul.security_status == "failed" and vul.functional_status == "passed", vul.message
+    ref_src = c.path(c.reference_fix.files[rel])
+    ref = await verify_sources(c, {rel: ref_src}, tmp_path / "r", label="reference")
+    assert ref.status == "passed", ref.message
+    assert (await formal.check(c, [c.path(rel)], tmp_path / "fv", label="v")).status == "counterexample"
+    assert (await formal.check(c, [ref_src], tmp_path / "fr", label="r")).status == "proven"
+    assert set(c.ground_truth.properties) <= set(c.property_ids())
