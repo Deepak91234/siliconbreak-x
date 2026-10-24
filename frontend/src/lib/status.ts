@@ -91,6 +91,8 @@ const RUN: Record<string, StatusInfo> = {
   repaired_verified: { tone: "ok", label: "repaired + verified" },
   repair_failed: { tone: "bad", label: "repair failed" },
   no_violation_found: { tone: "info", label: "no violation reproduced" },
+  suspected_only: { tone: "warn", label: "suspected only (not reproduced)" },
+  no_findings: { tone: "info", label: "nothing suspected" },
   error: { tone: "bad", label: "error" },
 };
 export const runStatus = (s: string | null | undefined) => lookup(RUN, s);

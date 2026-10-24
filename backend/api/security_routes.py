@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi import Path as Path_
 from pydantic import BaseModel
 
 from backend.core.process import PathOutsideWorkspace, ensure_within
@@ -25,10 +26,21 @@ TEXT_SUFFIXES = {".v", ".sv", ".vh", ".svh", ".diff", ".log", ".md", ".json", ".
 
 
 class AuditRequest(BaseModel):
-    case_id: str
+    """Exactly one source: a security case, an imported repository, or a CircuitLoop project."""
+    case_id: Optional[str] = None
+    repo_id: Optional[str] = None
+    files: Optional[list[str]] = None          # repository audits: explicit file selection
+    project_id: Optional[str] = None
+    revision_id: Optional[str] = None
     investigator: Optional[Literal["auto", "bitdeer", "anthropic", "rules"]] = None
     repair_agent: Literal["auto", "factory", "model", "reference", "none"] = "auto"
     max_attempts: Optional[int] = None
+
+
+class RepoImportRequest(BaseModel):
+    url: str
+    ref: Optional[str] = None
+    subdir: Optional[str] = None
 
 
 class BenchRequest(BaseModel):
@@ -83,11 +95,58 @@ async def case_source(case_id: str) -> dict:
 
 @router.post("/security/audits")
 async def create_audit(req: AuditRequest) -> dict:
+    sources = [x for x in (req.case_id, req.repo_id, req.project_id) if x]
+    if len(sources) != 1:
+        raise HTTPException(400, "give exactly one of case_id, repo_id or project_id")
     try:
-        return await so.start_case_audit(req.case_id, investigator=req.investigator, repair_agent=req.repair_agent,
-                                         max_attempts=req.max_attempts)
+        if req.case_id:
+            return await so.start_case_audit(req.case_id, investigator=req.investigator, repair_agent=req.repair_agent,
+                                             max_attempts=req.max_attempts)
+        if req.repo_id:
+            return await so.start_repo_audit(req.repo_id, req.files, investigator=req.investigator)
+        return await so.start_project_audit(req.project_id, req.revision_id, investigator=req.investigator)
     except AuditError as e:
         raise HTTPException(400, str(e))
+
+
+# ------------------------------------------------------------- repositories
+
+@router.post("/security/repos")
+async def import_repo(req: RepoImportRequest) -> dict:
+    from backend.security import repo_index as ri
+
+    try:
+        idx = await ri.import_repo(req.url, req.ref, req.subdir)
+    except ri.RepoError as e:
+        raise HTTPException(400, str(e))
+    return idx
+
+
+@router.get("/security/repos")
+async def list_repos() -> list[dict]:
+    from backend.security import repo_index as ri
+
+    return ri.list_repos()
+
+
+@router.get("/security/repos/{repo_id}")
+async def get_repo(repo_id: str) -> dict:
+    from backend.security import repo_index as ri
+
+    idx = ri.load_index(repo_id)
+    if idx is None:
+        raise HTTPException(404, "repository not found")
+    return idx
+
+
+@router.get("/security/repos/{repo_id}/file")
+async def repo_file(repo_id: str, path: str = Query(..., max_length=400)) -> dict:
+    from backend.security import repo_index as ri
+
+    try:
+        return {"path": path, "text": ri.read_file(repo_id, path)}
+    except (ri.RepoError, PathOutsideWorkspace) as e:
+        raise HTTPException(404, str(e))
 
 
 @router.get("/security/audits")
@@ -110,6 +169,38 @@ async def repair_audit(audit_id: str, req: RepairRequest) -> dict:
         raise HTTPException(400, str(e))
 
 
+VARIANT_RE = r"^(vulnerable|attempt-[0-9]{1,3})$"
+
+
+@router.get("/security/audits/{audit_id}/fpga")
+async def audit_fpga(audit_id: str) -> dict:
+    a = _audit(audit_id)
+    c = get_case(a["case_id"] or "")
+    return {"available": bool(c and c.board), "variants": so.fpga_variants(a),
+            "demo": [d.model_dump() for d in (c.board.demo if c and c.board else [])],
+            "mapping": (c.board.mapping if c and c.board else []), "state": a["record"].get("fpga") or {}}
+
+
+@router.post("/security/audits/{audit_id}/fpga/{variant}/build")
+async def fpga_build(audit_id: str, variant: str = Path_(..., pattern=VARIANT_RE)) -> dict:
+    try:
+        return await so.start_fpga_build(audit_id, variant)
+    except KeyError:
+        raise HTTPException(404, "audit not found")
+    except AuditError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/security/audits/{audit_id}/fpga/{variant}/program")
+async def fpga_program(audit_id: str, variant: str = Path_(..., pattern=VARIANT_RE)) -> dict:
+    try:
+        return await so.start_fpga_program(audit_id, variant)
+    except KeyError:
+        raise HTTPException(404, "audit not found")
+    except AuditError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.get("/security/audits/{audit_id}/file")
 async def audit_file(audit_id: str, path: str = Query(..., max_length=300)) -> dict:
     p = _audit_path(_audit(audit_id), path)
@@ -126,7 +217,16 @@ async def audit_sources(audit_id: str, attempt: Optional[int] = None) -> dict:
     a = _audit(audit_id)
     c = get_case(a["case_id"] or "")
     if c is None:
-        raise HTTPException(404, "case not found")
+        # repository / project audits: the exact files the investigator read
+        root = Path(a["dir"]) / "sources"
+        files = (a["record"].get("fileset") or {}).get("audited_files", [])
+        out_fs = {}
+        for rel in files:
+            try:
+                out_fs[rel] = ensure_within(root / rel, root).read_text(errors="replace")
+            except (PathOutsideWorkspace, OSError):
+                continue
+        return {"original": out_fs, "patched": None}
     out = {"original": {rel: c.path(rel).read_text() for rel in c.editable}, "patched": None}
     if attempt is not None:
         root = Path(a["dir"])

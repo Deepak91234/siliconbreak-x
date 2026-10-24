@@ -53,6 +53,42 @@ contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retes
 * Keys (`BITDEER_API_KEY`, `ANTHROPIC_API_KEY`, `FACTORY_API_KEY`) stay in the backend process;
   `/api/security/health` reports states, never keys.
 
+## Repository and design audits (P1)
+
+* **Import:** `POST /api/security/repos {url, ref?, subdir?}`. Only `https://github.com/<owner>/<repo>` URLs are accepted, and the ref is
+  resolved to a 40-hex SHA with `git ls-remote` first. The import is a shallow partial fetch (`--depth 1 --filter=blob:none`) with a
+  sparse checkout of `*.v *.sv *.vh *.svh` (optionally under one subdirectory). Hooks are disabled, symlinks are checked out as
+  plain files and skipped, submodules and LFS are never fetched, prompts are off (private repositories simply fail), and file
+  count and byte caps apply. Nothing from the repository is executed. Example: OpenTitan `hw/ip/rv_dm/rtl` at
+  `478afb033bb2d3e62cb4c5dd097f578de461b2b5` imports in about 2 s (8 files, 13.5k lines).
+* **Index:** modules, packages, includes, approximate instantiations and a keyword-based security-relevance score, which only
+  orders files for review.
+* **Audit:** `POST /api/security/audits {repo_id, files?}` (explicit files, or the highest-scoring files within the context budget,
+  at most 12), or `{project_id, revision_id?}` for the current CircuitLoop design's generated RTL. These audits use a **generic**
+  hardware-security contract (G-ACCESS, G-DEBUG, G-LOCK, G-ZEROIZE, G-RESET, G-FSM). With no trusted tests, reproduction,
+  formal checks and repairs are recorded as *not run*, every finding stays **suspected**, and the outcome is `suspected_only`
+  or `no_findings` ("not a proof of security"). Findings link to the exact lines at the pinned commit. The UI and the report
+  show which files were indexed and which were actually read.
+
+## Basys 3 before / after (P1)
+
+The demo case ships a trusted Basys 3 wrapper (`board/basys3_top.v`: BTNU read request, SW1 authorized, SW2 debug, SW3 address,
+BTNC reset; LED7–LED0 data, LED15 granted, LED14 denied) and a demo sequence whose LED patterns come from the contract.
+`POST /api/security/audits/{id}/fpga/{variant}/build` (variant `vulnerable`, or `attempt-N` for a verifier-accepted patch whose bytes
+still match the verified hashes) runs:
+
+1. **Board-level simulation.** The full Basys 3 top (wrapper, CircuitLoop library and the variant's RTL) runs the demo sequence
+   in CircuitLoop's generic Verilator harness, with debounce shortened by parameter. Each step's simulated LEDs are compared
+   with what the contract requires. Vulnerable: D1 (unauthorized debug read) shows `0x80A5`, i.e. granted plus the secret, where
+   `0x4000` (denied) is required. Reference fix: all four steps match. This is simulation, never a hardware observation.
+2. **Vivado.** Synthesis, implementation, timing and bitstream through the existing batch flow in your container, with pins from
+   the trusted board definition (`board_xdc`). Without a running container, the existing approval-gated "start headless
+   container" request is raised; nothing starts without your click, and if declined the stages report *unavailable*.
+
+`POST .../fpga/{variant}/program` detects the board, then raises the existing SHA-bound `program_fpga` approval; the hardware
+manager re-verifies the approval and the file hash before writing SRAM (never flash). The UI never records what the LEDs
+physically showed; that is your observation on the board.
+
 ## Status ladders
 
 Findings: `suspected → reproduced → patch_proposed → repaired_verified` (or `repair_failed`,
@@ -89,6 +125,12 @@ POST /api/security/audits/{id}/repair    {agent: auto|factory|model|reference}
 GET  /api/security/audits/{id}/file?path=        text artifacts (report.md, audit.json, logs, TASK.md, droid trace)
 GET  /api/security/audits/{id}/sources[?attempt=N]
 GET  /api/security/audits/{id}/waveform?path=&start=&end=&signals=
+POST /api/security/audits                {repo_id, files?} | {project_id, revision_id?}
+POST /api/security/repos                 {url, ref?, subdir?}
+GET  /api/security/repos, /api/security/repos/{id}, /api/security/repos/{id}/file?path=
+GET  /api/security/audits/{id}/fpga
+POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/build
+POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/program
 GET  /api/bench/cases
 POST /api/bench/runs                     {case_ids?, arms?, max_attempts?}
 GET  /api/bench/runs, /api/bench/runs/{id}
@@ -124,6 +166,12 @@ FACTORY_API_KEY=...        # Factory Droid; also install the droid CLI so `droid
    the human reference, labelled as such, showing the verifier accepts a correct fix (12/12, proven).
 3. SiliconBench → **Run SiliconBench**: harness 3/3, reproduction 3/3, formal 3/3, offline rules
    detect 1/3; model and Droid arms show "not run" until keys are configured.
+4. Back in the audit, **Basys 3 before / after → Simulate + build** on *before* and *after*: the demo-step table shows D1 leaking
+   `0xA5` on the vulnerable board top and denying on the fixed one (simulation). With Vivado running and the board connected,
+   **Program…** each one (approval) and press BTNU with SW1 off, SW2 on, SW3 on: the vulnerable board lights LED15 and the
+   secret on LED7–LED0, the fixed board lights LED14 only.
+5. Optional: **Audit a public repository → Example: OpenTitan rv_dm → Import → Audit**: pinned SHA, the files actually read,
+   and the honest "suspected only / not a proof" outcome.
 
 ## What is verified, and what is not
 
@@ -139,7 +187,8 @@ Not yet run (needs you):
 |---|---|---|
 | Bitdeer investigation | no `BITDEER_API_KEY` | add key, restart, Security → Run audit; the investigator chip shows Bitdeer and the model id |
 | Claude investigation / model repair | no `ANTHROPIC_API_KEY` | add key, restart, **Repair with model** |
-| Factory Droid repair | `droid` CLI not installed, no `FACTORY_API_KEY` | install the CLI, add key, restart, **Repair with Factory Droid**; the attempt shows the droid session id, trace and refused actions |
+| Factory Droid repair | `droid` CLI 0.249.0 is now installed (`~/.local/bin/droid`); no `FACTORY_API_KEY` | log the CLI in or set `FACTORY_API_KEY`, then **Repair with Factory Droid** (explicit click). Automatic repairs during an audit use Droid only when `FACTORY_API_KEY` is set. The attempt shows the session id, trace and refused actions |
 | Baseline vs assisted comparison | needs a model key | **Run SiliconBench** after adding a key |
-| Basys 3 before/after | `vivado_container` not running, board not connected | start your container, build the case's `board/basys3_top.v` wrapper for the vulnerable and fixed RTL, program with approval |
-| Repository import / historical cases | not implemented yet | P1 |
+| Basys 3 before/after: Vivado build | `vivado_container` not running | start your container (or approve the headless one), then **Simulate + build** for *before* and *after* in the Security tab |
+| Basys 3 before/after: programming | board not connected | plug in the Basys 3, **Program…**, approve, then run demo steps D1–D4 on the board and compare with the listed LED patterns |
+| Historical cases from public repositories | no case manifest with trusted tests written yet | a pinned historical case needs a contract, a trusted testbench and its fix commit; repository audits today stop at *suspected* |

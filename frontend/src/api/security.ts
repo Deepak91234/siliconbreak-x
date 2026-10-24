@@ -101,6 +101,7 @@ export interface Finding {
   confidence: "low" | "medium" | "high";
   limitations: string;
   rule?: string;
+  permalink?: string;
   status: FindingStatus;
   provider: string;
   model: string | null;
@@ -152,7 +153,7 @@ export interface Investigation {
 
 export type AuditStatus =
   | "created" | "running" | "reproduced" | "repaired_verified" | "repair_failed" | "no_violation_found" | "error"
-  | "failed" | "cancelled";
+  | "failed" | "cancelled" | "suspected_only" | "no_findings";
 
 export interface SecurityAudit {
   id: string;
@@ -178,8 +179,51 @@ export interface SecurityAudit {
     outcome: { status: string; summary: string };
     tool_versions: Record<string, string>;
     evidence: { generated_at: number; artifacts: Array<{ path: string; bytes: number; sha256: string }> } | null;
+    fileset?: { kind: "repository" | "project"; url?: string; sha?: string; ref?: string; subdir?: string; repo_id?: string;
+                indexed_files: number; indexed_modules?: number; audited_files: string[]; selection: string; truncated?: boolean };
+    fpga?: Record<string, FpgaVariantState>;
   };
 }
+
+export interface DemoStep { id: string; title: string; set: Record<string, number>; press: string | null; expect_leds: string; expect_text: string }
+
+export interface BoardSimStep {
+  id: string; title: string; set: Record<string, number>; press: string | null;
+  expected: string; expected_text: string; simulated: string; matches_contract: boolean;
+}
+
+export interface FpgaVariantState {
+  label: string;
+  kind: "vulnerable" | "agent" | "reference";
+  source_hashes?: Record<string, string>;
+  board_sim?: { status: string; message: string; steps: BoardSimStep[]; note: string; lint_ok: boolean | null;
+                commands: Array<{ step: string; command: string; exit_code: number | null }> };
+  build?: { status: string; ok: boolean; message: string; timing: { wns_ns?: number; whs_ns?: number } | null;
+            utilization: Record<string, { used?: number; available?: number }> | null; bitstream_path: string | null;
+            bitstream_sha256: string | null; bitstream_bytes: number | null; duration_s: number; vivado_version: string | null } | null;
+  programs?: Array<{ at: number; ok: boolean; adapter: string; state: string; message: string; bitstream_sha256: string }>;
+}
+
+export interface FpgaInfo {
+  available: boolean;
+  variants: Array<{ variant: string; label: string; kind: "vulnerable" | "agent" | "reference" }>;
+  demo: DemoStep[];
+  mapping: Array<{ control: string; signal: string; text: string }>;
+  state: Record<string, FpgaVariantState> & { loaded?: { variant: string; at: number } };
+}
+
+export interface RepoFile {
+  path: string; bytes: number; lines: number; modules: string[]; packages: string[]; includes: string[];
+  instances: string[]; score: number; keywords: Record<string, number>; skipped: string | null; sha256?: string;
+}
+
+export interface RepoIndex {
+  repo_id: string; url: string; owner: string; name: string; ref: string; sha: string; subdir: string;
+  imported_at: number; duration_s: number; files: RepoFile[]; modules: Record<string, string>;
+  totals: { files: number; bytes: number; modules: number; lines: number }; truncated: boolean; commands: string[];
+}
+
+export type RepoSummary = Pick<RepoIndex, "repo_id" | "url" | "owner" | "name" | "ref" | "sha" | "subdir" | "imported_at" | "totals" | "truncated">;
 
 export interface HealthItem { name?: string; role?: string; state: string; detail: string; model?: string }
 export interface SecurityHealth {
@@ -242,6 +286,21 @@ export const securityApi = {
     if (opts.signals?.length) p.set("signals", opts.signals.join(","));
     return request<Waveform>(`/api/security/audits/${enc(id)}/waveform?${p.toString()}`, { signal, timeoutMs: 60_000 });
   },
+  startRepoAudit: (repoId: string, files?: string[]) =>
+    request<{ audit: SecurityAudit; run: { id: string }; project: { id: string } }>("/api/security/audits",
+      { method: "POST", body: { repo_id: repoId, files }, timeoutMs: 60_000 }),
+  startProjectAudit: (projectId: string, revisionId?: string | null) =>
+    request<{ audit: SecurityAudit; run: { id: string }; project: { id: string } }>("/api/security/audits",
+      { method: "POST", body: { project_id: projectId, revision_id: revisionId ?? undefined }, timeoutMs: 60_000 }),
+  importRepo: (body: { url: string; ref?: string; subdir?: string }) =>
+    request<RepoIndex>("/api/security/repos", { method: "POST", body, timeoutMs: 900_000 }),
+  repos: () => request<RepoSummary[]>("/api/security/repos"),
+  repo: (id: string, signal?: AbortSignal) => request<RepoIndex>(`/api/security/repos/${enc(id)}`, { signal }),
+  fpga: (id: string, signal?: AbortSignal) => request<FpgaInfo>(`/api/security/audits/${enc(id)}/fpga`, { signal }),
+  fpgaBuild: (id: string, variant: string) =>
+    request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/build`, { method: "POST" }),
+  fpgaProgram: (id: string, variant: string) =>
+    request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/program`, { method: "POST" }),
   benchRuns: () => request<BenchRun[]>("/api/bench/runs"),
   benchRun: (id: string) => request<BenchRun>(`/api/bench/runs/${enc(id)}`),
   startBench: (body: { case_ids?: string[]; arms?: string[] }) =>

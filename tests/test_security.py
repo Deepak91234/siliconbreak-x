@@ -250,6 +250,20 @@ def test_droid_unavailable_is_reported(monkeypatch):
     s = get_settings()
     st = rep.droid_status(s.__class__(**{**s.__dict__, "droid_bin": None}))
     assert st["state"] == "unavailable" and "droid" in st["reason"]
+    st = rep.droid_status(s.__class__(**{**s.__dict__, "droid_bin": "/nonexistent/droid"}))
+    assert st["state"] == "unavailable" and "not found" in st["reason"]
+
+
+def test_auto_repair_uses_droid_only_when_configured(monkeypatch):
+    from backend.security import orchestrator as orch
+
+    so = orch.SecurityOrchestrator()
+    monkeypatch.setattr(orch.rep, "droid_status", lambda *a: {"state": "unverified", "reason": "no key", "sdk": "x", "cli": "/d"})
+    monkeypatch.setattr(orch.inv, "pick_provider", lambda *a, **k: ("rules", None, "no model"))
+    assert so._choose_agent("auto")[0] is None            # logged-in CLI alone: not used automatically
+    assert so._choose_agent("factory")[0] == "factory"    # but runs when asked for by name
+    monkeypatch.setattr(orch.rep, "droid_status", lambda *a: {"state": "configured", "reason": "", "sdk": "x", "cli": "/d"})
+    assert so._choose_agent("auto")[0] == "factory"
 
 
 # ------------------------------------------------------------------- bitdeer
@@ -294,7 +308,7 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
     for k in ("ANTHROPIC_API_KEY", "BITDEER_API_KEY", "FACTORY_API_KEY"):
         monkeypatch.setenv(k, "")
-    monkeypatch.setenv("SILICONBREAK_DROID", "")
+    monkeypatch.setenv("SILICONBREAK_DROID", "/nonexistent/droid")
     from backend.core import config
     from backend.storage import store
 
@@ -386,3 +400,154 @@ async def test_every_case_harness_is_valid(case_id, tmp_path):
     assert (await formal.check(c, [c.path(rel)], tmp_path / "fv", label="v")).status == "counterexample"
     assert (await formal.check(c, [ref_src], tmp_path / "fr", label="r")).status == "proven"
     assert set(c.ground_truth.properties) <= set(c.property_ids())
+
+
+# ------------------------------------------------------- Basys 3 before/after
+
+def test_demo_steps_and_stimulus(case):
+    from backend.security import fpga
+
+    steps = case.board.demo
+    assert [s.id for s in steps] == ["D1", "D2", "D3", "D4"] and steps[0].expect_leds == "0x4000"
+    text, plan = fpga.stimulus_for(steps)
+    assert text.splitlines()[1].startswith("end ") and "btnU 1" in text
+    assert all(sample > press for _, press, sample in plan)
+    with pytest.raises(Exception):
+        type(steps[0]).model_validate({"id": "X", "title": "t", "set": {"SW99": 1}, "expect_leds": "0x0"})
+
+
+@pytest.mark.verilator
+async def test_board_sim_shows_the_leak_only_on_the_vulnerable_board(case, tmp_path):
+    from backend.security import fpga
+
+    vul = await fpga.board_sim(case, {"rtl/debug_access_ctrl.v": case.path("rtl/debug_access_ctrl.v")}, tmp_path / "v")
+    assert vul["status"] == "differs_from_contract" and vul["lint_ok"]
+    d1 = vul["steps"][0]
+    assert d1["simulated"] == "0x80A5" and d1["expected"] == "0x4000" and not d1["matches_contract"]
+    assert all(s["matches_contract"] for s in vul["steps"][1:])
+    ref = await fpga.board_sim(case, {"rtl/debug_access_ctrl.v": case.path("reference/debug_access_ctrl.v")}, tmp_path / "r")
+    assert ref["status"] == "matches_contract"
+
+
+def test_board_xdc_uses_trusted_pins():
+    from backend.rtl.wrapper import board_xdc
+    from backend.specifications.board import load_board
+
+    x = board_xdc(load_board("basys3"))
+    assert "PACKAGE_PIN T18 IOSTANDARD LVCMOS33 } [get_ports btnU]" in x and "[get_ports {led[15]}]" in x
+
+
+# --------------------------------------------------------- repository import
+
+def test_repo_url_ref_subdir_validation():
+    from backend.security import repo_index as ri
+
+    assert ri.parse_url("https://github.com/lowRISC/opentitan") == ("lowRISC", "opentitan")
+    assert ri.parse_url("https://github.com/lowRISC/opentitan.git") == ("lowRISC", "opentitan")
+    for bad in ("http://github.com/a/b", "https://gitlab.com/a/b", "file:///etc", "https://github.com/a/b/../c",
+                "git@github.com:a/b.git", "https://github.com/../b", "https://github.com/a"):
+        with pytest.raises(ri.RepoError):
+            ri.parse_url(bad)
+    assert ri.validate_subdir("hw/ip/rv_dm/rtl/") == "hw/ip/rv_dm/rtl"
+    for bad in ("../x", "a/../b", "/abs/../../x", "a b", "a/./b"):
+        with pytest.raises(ri.RepoError):
+            ri.validate_subdir(bad)
+
+
+async def test_repo_bad_ref_is_refused_before_network():
+    from backend.security import repo_index as ri
+
+    for bad in ("--upload-pack=x", "a..b", "x y"):
+        with pytest.raises(ri.RepoError):
+            await ri.resolve_ref("https://github.com/a/b.git", bad)
+
+
+def test_repo_scoring_and_budgeted_selection():
+    from backend.security import repo_index as ri
+
+    s_dbg, kw = ri.score_text("hw/ip/dm/dmi_gate.sv", "assign allow = lc_hw_debug_en & !locked; logic [127:0] key_q;")
+    s_plain, _ = ri.score_text("hw/ip/uart/fifo.sv", "assign full = (count == DEPTH);")
+    assert s_dbg > 10 and s_plain == 0 and "debug" in kw
+    idx = {"files": [{"path": "a.sv", "score": 9.0, "bytes": 1000, "lines": 20, "skipped": None},
+                     {"path": "b.sv", "score": 0.0, "bytes": 10, "lines": 1, "skipped": None},
+                     {"path": "c.sv", "score": 5.0, "bytes": 500_000, "lines": 9000, "skipped": None},
+                     {"path": "d.sv", "score": 3.0, "bytes": 100, "lines": 5, "skipped": None}]}
+    assert ri.select_for_audit(idx, None) == ["a.sv", "d.sv"]   # c too big for the budget, b irrelevant
+    assert ri.select_for_audit(idx, ["d.sv", "../etc/passwd"]) == ["d.sv"]
+    with pytest.raises(ri.RepoError):
+        ri.select_for_audit(idx, ["nope.sv"])
+
+
+@pytest.mark.network
+async def test_import_opentitan_rv_dm_at_pinned_commit(tmp_path, monkeypatch):
+    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    from backend.core import config
+    config.get_settings.cache_clear()
+    from backend.security import repo_index as ri
+
+    sha = "478afb033bb2d3e62cb4c5dd097f578de461b2b5"
+    idx = await ri.import_repo("https://github.com/lowRISC/opentitan", sha, "hw/ip/rv_dm/rtl")
+    assert idx["sha"] == sha and idx["totals"]["files"] >= 5 and not idx["truncated"]
+    assert all(f["path"].startswith("hw/ip/rv_dm/rtl/") for f in idx["files"])
+    assert "rv_dm_dmi_gate.sv" in ri.select_for_audit(idx, None)[0]
+    config.get_settings.cache_clear()
+
+
+# ---------------------------------------------- project audit and FPGA build run
+
+async def _deny_when_blocked(c, run_id, timeout=300):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        run = (await c.get(f"/api/runs/{run_id}")).json()
+        if run.get("finished_at"):
+            return run
+        synth = next((x for x in run["stages"] if x["key"] == "synth"), None)
+        if synth and synth["status"] == "blocked":
+            for a in (await c.get("/api/approvals", params={"status": "pending"})).json():
+                await c.post(f"/api/approvals/{a['id']}/deny")
+        await asyncio.sleep(0.25)
+    raise AssertionError("run did not finish")
+
+
+@pytest.mark.verilator
+async def test_fpga_build_simulates_then_reports_vivado_unavailable(client, monkeypatch):
+    from backend.agent.orchestrator import orchestrator as design_orchestrator
+
+    async def no_vivado(ctx):
+        return False
+    monkeypatch.setattr(design_orchestrator, "_ensure_vivado", no_vivado)
+    c = client
+    r = (await c.post("/api/security/audits", json={"case_id": CASE, "repair_agent": "reference"})).json()
+    a = await _wait(c, r["audit"]["id"])
+    f = (await c.get(f"/api/security/audits/{a['id']}/fpga")).json()
+    assert [v["variant"] for v in f["variants"]] == ["vulnerable", "attempt-1"] and f["variants"][1]["kind"] == "reference"
+    assert (await c.post(f"/api/security/audits/{a['id']}/fpga/vulnerable/program")).status_code == 400
+    assert (await c.post(f"/api/security/audits/{a['id']}/fpga/attempt-7/build")).status_code == 400
+    b = (await c.post(f"/api/security/audits/{a['id']}/fpga/vulnerable/build")).json()
+    run = await _deny_when_blocked(c, b["run"]["id"])
+    st = {s["key"]: s["status"] for s in run["stages"]}
+    assert st["board_sim"] == "failed" and st["synth"] == "unavailable" and st["bitstream"] == "unavailable"
+    state = (await c.get(f"/api/security/audits/{a['id']}/fpga")).json()["state"]["vulnerable"]
+    assert state["board_sim"]["steps"][0]["simulated"] == "0x80A5" and not state.get("build")
+
+
+@pytest.mark.verilator
+async def test_project_audit_stays_suspected_without_trusted_tests(client):
+    c = client
+    res = (await c.post("/api/projects", json={"text": "Blink LEDs 0-7 alternately at 2 Hz.",
+                                               "options": {"simulation_only": True}})).json()
+    pid = res["project"]["id"]
+    t0 = time.time()
+    while not (await c.get(f"/api/runs/{res['run']['id']}")).json().get("finished_at"):
+        assert time.time() - t0 < 240
+        await asyncio.sleep(0.25)
+    r = (await c.post("/api/security/audits", json={"project_id": pid})).json()
+    a = await _wait(c, r["audit"]["id"])
+    assert a["status"] in ("no_findings", "suspected_only") and a["source_kind"] == "project"
+    run = (await c.get(f"/api/runs/{r['run']['id']}")).json()
+    st = {s["key"]: s["status"] for s in run["stages"]}
+    assert st["reproduce"] == st["formal"] == st["repair"] == "skipped" and st["evidence"] == "passed"
+    assert all(f["status"] == "suspected" for f in a["record"]["findings"])
+    src = (await c.get(f"/api/security/audits/{a['id']}/sources")).json()["original"]
+    assert "rtl/cl_core.v" in src and "module cl_core" in src["rtl/cl_core.v"]
+    assert (await c.post("/api/security/audits", json={"project_id": pid, "case_id": CASE})).status_code == 400

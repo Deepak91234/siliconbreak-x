@@ -41,7 +41,7 @@ import {
 } from "./reducer";
 
 const SEQ_KEY = "circuitloop:lastSeq";
-const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history"];
+const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history", "security", "bench"];
 
 function readSeq(): number {
   try {
@@ -551,6 +551,26 @@ export class AppStore {
 
   putAudit(audit: SecurityAudit): void {
     this.update((s) => putSecurityAudits(s, [audit]));
+  }
+
+  /** Audit an imported repository (explicit files, or the backend's budgeted selection). */
+  async startRepoAudit(repoId: string, files?: string[]): Promise<SecurityAudit> {
+    const res = await securityApi.startRepoAudit(repoId, files);
+    return this.openAudit(res);
+  }
+
+  /** Audit the current CircuitLoop project's generated RTL against the generic contract. */
+  async startProjectAudit(projectId: string, revisionId?: string | null): Promise<SecurityAudit> {
+    const res = await securityApi.startProjectAudit(projectId, revisionId);
+    return this.openAudit(res);
+  }
+
+  private async openAudit(res: { audit: SecurityAudit; project: { id: string } }): Promise<SecurityAudit> {
+    this.putAudit(res.audit);
+    await this.loadProjects();
+    this.selectProject(res.project.id);
+    this.setTab("security");
+    return res.audit;
   }
 
   /** Start an audit of a security case; selects its project and opens the Security tab. */

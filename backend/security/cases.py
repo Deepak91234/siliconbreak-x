@@ -88,9 +88,29 @@ class ReferenceFix(BaseModel):
     author: str = ""
 
 
+class DemoStep(BaseModel):
+    """One step of the physical demo: switch settings, a held button, and the LED pattern the
+    contract requires (led[15] = grant, led[14] = denied, led[7:0] = data for the demo wrapper)."""
+    id: str
+    title: str
+    set: dict[str, int] = Field(default_factory=dict)   # e.g. {"SW1": 0, "SW2": 1}
+    press: Optional[Literal["BTNU", "BTNC", "BTNL", "BTNR", "BTND"]] = None
+    expect_leds: str                                     # hex, e.g. "0x4000"
+    expect_text: str = ""
+
+    @field_validator("set")
+    @classmethod
+    def _switches(cls, v: dict[str, int]) -> dict[str, int]:
+        for k, val in v.items():
+            if not re.fullmatch(r"SW(1[0-5]|[0-9])", k) or val not in (0, 1):
+                raise ValueError(f"invalid switch setting {k}={val}")
+        return v
+
+
 class BoardSpec(BaseModel):
     wrapper: str
     mapping: list[dict] = Field(default_factory=list)
+    demo: list[DemoStep] = Field(default_factory=list)
 
 
 class PortSpec(BaseModel):

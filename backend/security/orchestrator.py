@@ -23,6 +23,7 @@ finding past `reproduced`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -35,6 +36,7 @@ from backend.agent.orchestrator import RunCancelled, RunContext, orchestrator as
 from backend.core.config import get_settings
 from backend.core.events import bus
 from backend.security import formal as formal_mod
+from backend.security import fpga
 from backend.security import investigate as inv
 from backend.security import repair as rep
 from backend.security.cases import CaseManifest, get_case, sha256_file
@@ -55,11 +57,35 @@ SECURITY_STAGES: list[tuple[str, str]] = [
     ("evidence", "Evidence record"),
 ]
 REPAIR_STAGES = [k for k in SECURITY_STAGES if k[0] in ("repair", "retest", "evidence")]
+HW_BUILD_STAGES: list[tuple[str, str]] = [
+    ("board_sim", "Board-level simulation"),
+    ("synth", "Vivado synthesis"),
+    ("impl", "Implementation"),
+    ("timing", "Timing validation"),
+    ("bitstream", "Bitstream"),
+]
+HW_PROGRAM_STAGES: list[tuple[str, str]] = [("detect", "FPGA detection"), ("program", "Programming")]
 REPAIR_AGENTS = ("auto", "factory", "model", "reference", "none")
 
 
 class AuditError(Exception):
     pass
+
+
+# Used for repository and CircuitLoop-project audits, which have no case-specific contract.
+GENERIC_CONTRACT = {
+    "summary": "Generic hardware-security contract (no case-specific contract or trusted tests exist for these files).",
+    "properties": [
+        {"id": "G-ACCESS", "text": "Protected registers, memories and secrets are readable or writable only with the required privilege or authorization."},
+        {"id": "G-DEBUG", "text": "Debug, test and scan interfaces cannot bypass access control or life-cycle gating."},
+        {"id": "G-LOCK", "text": "Lock bits stay set until reset and locked registers ignore writes."},
+        {"id": "G-ZEROIZE", "text": "Secret material is fully cleared on zeroize, reset or a security state change."},
+        {"id": "G-RESET", "text": "Security-relevant state has a defined, safe value after reset."},
+        {"id": "G-FSM", "text": "Security state machines cannot reach undefined states or skip required checks."},
+    ],
+}
+FILESET_LIMITS = ("No trusted tests or properties exist for these files, so no finding can be reproduced here; every finding "
+                  "stays suspected. Only the listed files were read; the rest of the repository was not audited.")
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -123,28 +149,415 @@ class SecurityOrchestrator:
         self._launch(ctx, audit_id, self._repair_run(ctx, audit_id, case, agent, standalone=True))
         return {"audit": self.public(store.get_security_audit(audit_id)), "run": run}
 
-    def _launch(self, ctx: RunContext, audit_id: str, coro) -> None:
-        design_orchestrator.contexts[ctx.run_id] = ctx  # lets POST /api/runs/{id}/cancel stop audits too
-        task = asyncio.create_task(self._guard(ctx, audit_id, coro))
-        self.tasks[f"{audit_id}:{ctx.run_id}"] = task
+    # ------------------------------------------------------------ hardware
+    def fpga_variants(self, audit: dict) -> list[dict]:
+        """Buildable variants: the vulnerable source and every verifier-accepted repair attempt."""
+        case = get_case(audit.get("case_id") or "")
+        if case is None or case.board is None:
+            return []
+        out = [{"variant": "vulnerable", "label": "vulnerable (case source)", "kind": "vulnerable"}]
+        for a in audit["record"].get("repairs", []):
+            if a.get("verdict") == "verified":
+                kind = "reference" if a.get("agent") == "reference" else "agent"
+                label = (f"human reference fix (harness validation, attempt {a['attempt']})" if kind == "reference"
+                         else f"patched by {a.get('label')} (attempt {a['attempt']}, verifier-accepted)")
+                out.append({"variant": f"attempt-{a['attempt']}", "label": label, "kind": kind})
+        return out
 
-    async def _guard(self, ctx: RunContext, audit_id: str, coro) -> None:
+    def _variant_sources(self, audit: dict, case: CaseManifest, variant: str) -> tuple[dict, dict[str, Path]]:
+        info = next((v for v in self.fpga_variants(audit) if v["variant"] == variant), None)
+        if info is None:
+            raise AuditError(f"variant {variant!r} is not buildable (only the vulnerable source and verifier-accepted patches are)")
+        if variant == "vulnerable":
+            return info, {rel: case.path(rel) for rel in case.editable}
+        ws = Path(audit["dir"]) / "repair" / variant / "workspace"
+        cands = {rel: ws / rel for rel in case.editable}
+        for rel, p in cands.items():
+            if not p.is_file() or p.is_symlink():
+                raise AuditError(f"{variant}: {rel} is missing")
+        # the bytes must still be the ones the verifier accepted
+        att = next(a for a in audit["record"]["repairs"] if f"attempt-{a['attempt']}" == variant)
+        want = ((att.get("verification") or {}).get("source_hashes") or {})
+        for rel, p in cands.items():
+            if want.get(rel) and sha256_file(p) != want[rel]:
+                raise AuditError(f"{variant}: {rel} changed after verification")
+        return info, cands
+
+    async def start_fpga_build(self, audit_id: str, variant: str) -> dict:
+        audit = store.get_security_audit(audit_id)
+        if audit is None:
+            raise KeyError(audit_id)
+        case = get_case(audit.get("case_id") or "")
+        if case is None or case.board is None:
+            raise AuditError("this case has no trusted Basys 3 wrapper")
+        info, cands = self._variant_sources(audit, case, variant)
+        text = f"Basys 3 build: {info['label']}"
+        run = store.create_run(audit["project_id"], trigger="security_fpga_build", request_text=text,
+                               options={"audit_id": audit_id, "variant": variant}, stages=HW_BUILD_STAGES)
+        await bus.emit("run.created", run_id=run["id"], project_id=audit["project_id"], run=run)
+        ctx = RunContext(run["id"], audit["project_id"], {"variant": variant})
+        self._launch(ctx, audit_id, self._fpga_build_run(ctx, audit_id, case, info, cands), affects_audit=False)
+        return {"run": run, "variant": info}
+
+    async def start_fpga_program(self, audit_id: str, variant: str) -> dict:
+        audit = store.get_security_audit(audit_id)
+        if audit is None:
+            raise KeyError(audit_id)
+        build = (((audit["record"].get("fpga") or {}).get(variant) or {}).get("build") or {})
+        if not build.get("ok") or not fpga.verify_bitstream_file(build.get("bitstream_path"), build.get("bitstream_sha256")):
+            raise AuditError("no valid bitstream for this variant; build it first")
+        info = next((v for v in self.fpga_variants(audit) if v["variant"] == variant), None) or {"label": variant}
+        text = f"Program the Basys 3: {info['label']}"
+        run = store.create_run(audit["project_id"], trigger="security_fpga_program", request_text=text,
+                               options={"audit_id": audit_id, "variant": variant}, stages=HW_PROGRAM_STAGES)
+        await bus.emit("run.created", run_id=run["id"], project_id=audit["project_id"], run=run)
+        ctx = RunContext(run["id"], audit["project_id"], {"variant": variant})
+        self._launch(ctx, audit_id, self._fpga_program_run(ctx, audit_id, variant, info, build), affects_audit=False)
+        return {"run": run}
+
+    async def _record_fpga(self, audit_id: str, variant: str, **fields) -> None:
+        def put(r: dict) -> None:
+            r.setdefault("fpga", {}).setdefault(variant, {}).update(fields)
+        await self._record(audit_id, put)
+
+    async def _fpga_build_run(self, ctx: RunContext, audit_id: str, case: CaseManifest, info: dict,
+                              cands: dict[str, Path]) -> None:
+        from backend.vivado import build as vb
+
+        variant = info["variant"]
+        root = Path(store.get_security_audit(audit_id)["dir"]) / "fpga" / variant
+        await self._record_fpga(audit_id, variant, label=info["label"], kind=info["kind"], build=None,
+                                source_hashes={rel: sha256_file(p) for rel, p in cands.items()})
+
+        # ---- board-level simulation of the demo sequence
+        await ctx.stage("board_sim", "running", "simulating the demo sequence on the full Basys 3 top (Verilator)")
+
+        async def slog(line: str) -> None:
+            await ctx.log("board_sim", "verilator", line)
+
+        sim = await fpga.board_sim(case, cands, root / "board_sim", on_line=slog)
+        sim["dir"] = f"fpga/{variant}/board_sim"
+        await self._record_fpga(audit_id, variant, board_sim=sim)
+        if sim["status"] in ("error", "not_run"):
+            await ctx.stage("board_sim", "failed" if sim["status"] == "error" else "unavailable", sim["message"])
+            for k in ("synth", "impl", "timing", "bitstream"):
+                await ctx.stage(k, "skipped", "board-level simulation did not run")
+            await ctx.set_status("failed", error=sim["message"], finished=True)
+            return
+        bad = [st for st in sim["steps"] if not st["matches_contract"]]
+        if bad:
+            await ctx.stage("board_sim", "failed", "; ".join(f"{st['id']}: LEDs {st['simulated']}, contract requires {st['expected']}"
+                                                             for st in bad)[:200], detail={"steps": sim["steps"]})
+            await ctx.say(f"Board-level simulation ({info['label']}): " + "; ".join(
+                f"{st['id']} {st['title']}: LEDs {st['simulated']} where the contract requires {st['expected']}" for st in bad)
+                + ". On the board this shows up on the LEDs. (Simulation, not a hardware observation.)")
+        else:
+            await ctx.stage("board_sim", "passed", f"all {len(sim['steps'])} demo steps match the contract",
+                            detail={"steps": sim["steps"]})
+        ctx.check_cancel()
+
+        # ---- Vivado
+        await ctx.stage("synth", "running", "checking Vivado environment")
+        if not await design_orchestrator._ensure_vivado(ctx):
+            for k in ("synth", "impl", "timing", "bitstream"):
+                await ctx.stage(k, "unavailable", "Vivado environment not available")
+            await ctx.say("Vivado is not available, so no bitstream was built. Start your vivado_container (or approve the "
+                          "headless container) and build again.", kind="result")
+            await ctx.set_status("failed", error="Vivado unavailable", finished=True)
+            return
+        while vb.is_busy():
+            await ctx.stage("synth", "blocked", "waiting for another Vivado build to finish")
+            await asyncio.sleep(3)
+            ctx.check_cancel()
+        srcs = fpga.board_sources(case, cands, root / "vivado_src")
+        xdc = fpga.write_xdc(root / "vivado_src")
+        stage_state: dict[str, str] = {}
+        current = {"key": "synth"}
+
+        async def on_stage(vstage: str, status: str) -> None:
+            key = {"read": "synth", "synth": "synth", "opt": "impl", "place": "impl", "route": "impl",
+                   "reports": "timing", "bitstream": "bitstream"}.get(vstage)
+            if key is None:
+                return
+            current["key"] = key
+            if status == "running":
+                await ctx.stage(key, "running", f"vivado {vstage}")
+            elif status == "failed":
+                await ctx.stage(key, "failed", f"vivado {vstage} failed")
+            elif status == "passed" and vstage in ("synth", "route"):
+                stage_state[key] = "passed"
+                await ctx.stage(key, "passed", f"vivado {vstage} done")
+
+        async def vlog(line: str) -> None:
+            await ctx.log(current["key"], "vivado", line)
+
+        try:
+            res = await vb.run_build(fpga.build_id_for(audit_id, variant), srcs, xdc, root / "vivado",
+                                     on_line=vlog, on_stage=on_stage, cancel=ctx.cancel)
+        except vb.VivadoBusy as e:
+            for k in ("synth", "impl", "timing", "bitstream"):
+                await ctx.stage(k, "failed", str(e))
+            await ctx.set_status("failed", error=str(e), finished=True)
+            return
+        if res.status == "cancelled":
+            raise RunCancelled()
+        info_b = fpga.bitstream_info(res)
+        await self._record_fpga(audit_id, variant, build=info_b)
+        if res.status == "unavailable":
+            for k in ("synth", "impl", "timing", "bitstream"):
+                await ctx.stage(k, "unavailable", res.message[:200])
+            await ctx.set_status("failed", error=res.message, finished=True)
+            return
+        checks = {c["name"]: c for c in res.checks}
+        for key in ("synth", "impl"):
+            if stage_state.get(key) != "passed":
+                await ctx.stage(key, "failed" if not res.ok else "passed", res.message[:200] if not res.ok else "done")
+        t = res.timing or {}
+        t_ok = checks.get("timing_met", {}).get("passed") and checks.get("clock_constrained", {}).get("passed", False)
+        await ctx.stage("timing", ("passed" if t_ok else "failed") if t else "skipped",
+                        f"WNS {t.get('wns_ns')} ns, WHS {t.get('whs_ns')} ns" if t else "no timing report")
+        bit_ok = checks.get("bitstream_valid", {}).get("passed", False) and res.ok
+        await ctx.stage("bitstream", "passed" if bit_ok else "failed",
+                        (f"{info_b['bitstream_bytes']} bytes, sha256 {res.bitstream_sha256[:12]}..." if bit_ok
+                         else checks.get("bitstream_valid", {}).get("detail", res.message))[:200],
+                        detail={"sha256": res.bitstream_sha256, "path": res.bitstream_path})
+        await ctx.say(f"Basys 3 bitstream for {info['label']}: " + ("built" if bit_ok else "build failed")
+                      + (f" (WNS {t.get('wns_ns')} ns). Programming needs your approval." if bit_ok else f": {res.message}"),
+                      kind="result" if bit_ok else "error")
+        await ctx.set_status("passed" if bit_ok else "failed", finished=True)
+
+    async def _fpga_program_run(self, ctx: RunContext, audit_id: str, variant: str, info: dict, build: dict) -> None:
+        from backend.agent import approvals
+        from backend.programmer.manager import hardware
+
+        bit, sha = Path(build["bitstream_path"]), build["bitstream_sha256"]
+        await ctx.stage("detect", "running", "looking for the Basys 3")
+        det = await hardware.detect()
+        if det.state != "connected":
+            await ctx.stage("detect", "unavailable" if det.state in ("no_board", "tool_missing") else "failed",
+                            f"{det.state}: {det.message}"[:200], det.model_dump())
+            await ctx.stage("program", "skipped", "no board available")
+            await ctx.say(f"Basys 3 not available ({det.state}); nothing was programmed.", kind="result")
+            await ctx.set_status("failed", error=f"board {det.state}", finished=True)
+            return
+        await ctx.stage("detect", "passed", f"{det.device or 'xc7a35t'} idcode {det.idcode} via {det.adapter}", det.model_dump())
+        if not fpga.verify_bitstream_file(str(bit), sha):
+            await ctx.stage("program", "failed", "bitstream missing or hash mismatch")
+            await ctx.set_status("failed", error="bitstream integrity check failed", finished=True)
+            return
+        appr = await approvals.request(
+            "program_fpga", f"Program the Basys 3: {info['label']}",
+            "Load this security-demo bitstream into the FPGA's configuration SRAM (volatile: the flash is not written; "
+            "power-cycling restores the previous design).",
+            {"bitstream_sha256": sha, "bitstream_path": str(bit), "audit_id": audit_id, "variant": variant, "volatile": True},
+            run_id=ctx.run_id, project_id=ctx.project_id)
+        await ctx.stage("program", "blocked", "waiting for your approval")
+        await ctx.set_status("waiting")
+        decision = await approvals.wait(appr["id"], ctx.cancel)
+        ctx.check_cancel()
+        await ctx.set_status("running")
+        if decision != "approved":
+            await ctx.stage("program", "skipped", "programming declined")
+            await ctx.set_status("cancelled", finished=True)
+            return
+        await ctx.stage("program", "running", "programming SRAM")
+        res = await hardware.program(bit, sha, approval_id=appr["id"])
+        approvals.mark_result(appr["id"], res.ok, res.model_dump())
+        await bus.emit("approval.resolved", run_id=ctx.run_id, project_id=ctx.project_id, approval=store.get_approval(appr["id"]))
+        for line in (res.raw or "").splitlines()[-40:]:
+            await ctx.log("program", res.adapter, line)
+        entry = {"at": now(), "ok": res.ok, "adapter": res.adapter, "state": res.state, "message": res.message,
+                 "bitstream_sha256": sha}
+
+        def put(r: dict) -> None:
+            v = r.setdefault("fpga", {}).setdefault(variant, {})
+            v.setdefault("programs", []).append(entry)
+            r["fpga"]["loaded"] = {"variant": variant, "at": entry["at"]} if res.ok else r["fpga"].get("loaded")
+        await self._record(audit_id, put)
+        await ctx.stage("program", "passed" if res.ok else "failed", f"{res.adapter}: {res.message}"[:200], res.model_dump())
+        await ctx.say(("Programmed the Basys 3 with " + info["label"] + ". Run the demo steps on the board; the LED "
+                       "patterns the contract requires are listed in the Security tab.") if res.ok
+                      else f"Programming failed ({res.adapter}): {res.message}", kind="result" if res.ok else "error")
+        await ctx.set_status("passed" if res.ok else "failed", finished=True)
+
+    # -------------------------------------------- repository / project audits
+    async def start_repo_audit(self, repo_id: str, files: list[str] | None, *, investigator: str | None = None) -> dict:
+        from backend.security import repo_index as ri
+
+        idx = ri.load_index(repo_id)
+        if idx is None:
+            raise AuditError("unknown repository; import it first")
+        try:
+            sel = ri.select_for_audit(idx, files)
+        except ri.RepoError as e:
+            raise AuditError(str(e))
+        if not sel:
+            raise AuditError("no security-relevant files were found to audit; select files explicitly")
+        texts = {rel: ri.read_file(repo_id, rel) for rel in sel}
+        label = f"{idx['owner']}/{idx['name']}@{idx['sha'][:7]}" + (f" ({idx['subdir']})" if idx["subdir"] else "")
+        meta = {"kind": "repository", "repo_id": repo_id, "url": idx["url"], "sha": idx["sha"], "ref": idx["ref"],
+                "subdir": idx["subdir"], "indexed_files": idx["totals"]["files"], "indexed_modules": idx["totals"]["modules"],
+                "audited_files": sel, "truncated": idx["truncated"],
+                "selection": "explicit" if files else "highest security-relevance score within the context budget"}
+        project_id = self._project_titled(f"Security audit: {label}")
+        return await self._start_fileset(project_id, "repository", label, texts, meta, investigator,
+                                         repo_url=idx["url"], commit_sha=idx["sha"])
+
+    async def start_project_audit(self, project_id: str, revision_id: str | None, *, investigator: str | None = None) -> dict:
+        project = store.get_project(project_id)
+        if project is None:
+            raise AuditError("unknown project")
+        rev = store.get_revision(revision_id) if revision_id else (
+            store.get_revision(project["current_revision_id"]) if project.get("current_revision_id") else None)
+        if rev is None or rev["project_id"] != project_id:
+            raise AuditError("the project has no revision to audit")
+        rtl = Path(rev["dir"]) / "rtl"
+        texts = {f"rtl/{n}": (rtl / n).read_text() for n in ("cl_core.v", "basys3_top.v") if (rtl / n).is_file()}
+        if not texts:
+            raise AuditError("the revision has no RTL files")
+        label = f"{project['title']} r{rev['number']}"
+        meta = {"kind": "project", "project_id": project_id, "revision_id": rev["id"], "revision_number": rev["number"],
+                "audited_files": sorted(texts), "indexed_files": len(texts), "selection": "the revision's generated RTL"}
+        return await self._start_fileset(project_id, "project", label, texts, meta, investigator)
+
+    def _project_titled(self, title: str) -> str:
+        for p in store.list_projects():
+            if p["title"] == title:
+                return p["id"]
+        return store.create_project(title)["id"]
+
+    async def _start_fileset(self, project_id: str, kind: str, label: str, texts: dict[str, str], meta: dict,
+                             investigator: str | None, *, repo_url: str | None = None, commit_sha: str | None = None) -> dict:
+        opts = {"investigator": investigator or "auto", "repair_agent": "none"}
+        audit = store.create_security_audit(project_id=project_id, source_kind=kind, case_id=None, repo_url=repo_url,
+                                            commit_sha=commit_sha, options=opts)
+        root = Path(audit["dir"])
+        for rel, txt in texts.items():
+            dst = root / "sources" / rel
+            if not dst.resolve().is_relative_to((root / "sources").resolve()):
+                raise AuditError(f"unsafe path {rel!r}")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(txt)
+        pseudo_case = {
+            "case_id": None, "title": label, "source_kind": kind,
+            "provenance": (f"{meta.get('url')} at pinned commit {commit_sha}. " if kind == "repository" else
+                           "RTL generated by CircuitLoop for this project. ") + FILESET_LIMITS,
+            "cwe": [], "repository": repo_url, "commit": commit_sha, "license": "", "top_module": "",
+            "editable": [], "description": "", "interface": [], "security_contract": GENERIC_CONTRACT,
+            "functional_contract": [], "tests": [], "formal": {"available": False, "properties": []},
+            "has_reference_fix": False, "board": None,
+        }
+        record = {**self._initial_record_from(pseudo_case, opts), "fileset": meta,
+                  "source": {"kind": kind, "label": label,
+                             "files": {rel: hashlib.sha256(t.encode()).hexdigest() for rel, t in texts.items()}}}
+        text = f"Security audit: {label}"
+        run = store.create_run(project_id, trigger="security_audit", request_text=text, options={"audit_id": audit["id"], **opts},
+                               stages=SECURITY_STAGES)
+        audit = store.update_security_audit(audit["id"], run_id=run["id"], status="running", record=record)
+        await self._emit_audit(audit)
+        await bus.emit("run.created", run_id=run["id"], project_id=project_id, run=run)
+        ctx = RunContext(run["id"], project_id, opts)
+        msg = store.add_message(project_id, "user", text, run_id=run["id"])
+        await bus.emit("agent.message", run_id=run["id"], project_id=project_id, message=msg)
+        self._launch(ctx, audit["id"], self._fileset_run(ctx, audit["id"], texts, meta))
+        return {"audit": self.public(store.get_security_audit(audit["id"])), "run": run, "project": store.get_project(project_id)}
+
+    def _initial_record_from(self, pub: dict, opts: dict) -> dict:
+        return {"case": pub, "options": opts, "providers": {}, "investigation": None, "findings": [],
+                "unexplained_failures": [], "reproduction": None, "formal_original": None, "repairs": [],
+                "harness_validation": None, "outcome": {"status": "running", "summary": ""}, "tool_versions": {},
+                "evidence": None}
+
+    async def _fileset_run(self, ctx: RunContext, audit_id: str, texts: dict[str, str], meta: dict) -> None:
+        audit = store.get_security_audit(audit_id)
+        root = Path(audit["dir"])
+        await ctx.stage("contract", "passed", "generic hardware-security contract (no case-specific contract or trusted tests)",
+                        detail={"summary": GENERIC_CONTRACT["summary"]})
+        lines = sum(t.count("\n") + 1 for t in texts.values())
+        mods = sorted({m for t in texts.values() for m in re.findall(r"^\s*module\s+(\w+)", t, re.M)})
+        await ctx.stage("index", "passed", f"{meta['indexed_files']} file(s) indexed; auditing {len(texts)} "
+                                           f"({lines} lines): {meta['selection']}",
+                        detail={"audited": sorted(texts), "modules": mods, "indexed": meta["indexed_files"]})
+        await ctx.say(f"Auditing {len(texts)} file(s) of **{store.get_security_audit(audit_id)['record']['case']['title']}** "
+                      f"against a generic hardware-security contract. {FILESET_LIMITS}")
+        ctx.check_cancel()
+
+        name, provider, note = inv.pick_provider(audit["options"].get("investigator"))
+        label = {"bitdeer": "Bitdeer", "anthropic": "Claude", "rules": "offline static rules (not AI)"}[name]
+        await ctx.stage("investigate", "running", f"investigating with {label}" + (f" ({provider.model})" if provider else ""))
+        extra = ("CONTEXT\n  These files come from " + (f"{meta['url']} at commit {meta['sha']}" if meta["kind"] == "repository"
+                 else "a CircuitLoop-generated design") + ". Other files of the design may exist but were not provided.")
+        irec = await inv.investigate(GENERIC_CONTRACT, [], texts, root / "investigate", provider_override=(name, provider, note),
+                                     extra_context=extra)
+        used = irec if irec["status"] == "ok" else (irec.get("fallback") or irec)
+        findings = []
+        for f in used.get("findings", []):
+            f = {**f, "provider": used.get("provider"), "model": used.get("model"), "is_ai": used.get("is_ai", False)}
+            if meta["kind"] == "repository":
+                f["permalink"] = f"{meta['url']}/blob/{meta['sha']}/{f['file']}#L{f['line_start']}-L{f['line_end']}"
+            self._advance(f, "suspected", f"proposed by {used.get('provider')}; no trusted test exists to reproduce it")
+            findings.append(f)
+        await self._record(audit_id, lambda r: r.update(investigation=irec, findings=findings, providers={
+            "investigator": {"provider": name, "model": irec.get("model"), "is_ai": provider is not None, "note": note}}))
+        summary = f"{label}: {len(findings)} suspected finding(s)"
+        if irec["status"] != "ok":
+            summary = f"{label} failed ({(irec.get('error') or {}).get('message', 'error')}); offline rules found {len(findings)}"
+        await ctx.stage("investigate", "passed" if irec["status"] == "ok" else "inconclusive", summary,
+                        detail={"provider": name, "findings": len(findings)})
+        why = "no trusted security test or property exists for these files"
+        await ctx.stage("reproduce", "skipped", f"not run: {why}")
+        await ctx.stage("formal", "skipped", f"not run: {why}")
+        await ctx.stage("repair", "skipped", "repairs need a reproduced violation")
+        await ctx.stage("retest", "skipped", "nothing to retest")
+        if findings:
+            await ctx.say(f"{len(findings)} **suspected** finding(s) ({label}); none is reproduced, because no trusted test "
+                          "exists for these files. Treat them as leads for a case-specific contract and test.")
+        else:
+            await ctx.say(f"The investigation ({label}) reported no suspected weakness in the audited files. "
+                          "This is not evidence that the files are secure.")
+        await self._evidence_generic(ctx, audit_id)
+        await self._finish_audit(ctx, audit_id, "suspected_only" if findings else "no_findings",
+                                 f"{len(findings)} suspected finding(s); not reproduced (no trusted tests for these files)."
+                                 if findings else "No suspected weakness reported in the audited files (not a proof of security).")
+
+    async def _evidence_generic(self, ctx: RunContext, audit_id: str) -> None:
+        await ctx.stage("evidence", "running", "hashing artifacts")
+        audit = store.get_security_audit(audit_id)
+        root = Path(audit["dir"])
+        artifacts = [{"path": _rel(p, root), "bytes": p.stat().st_size, "sha256": sha256_file(p)}
+                     for p in sorted(root.rglob("*")) if p.is_file()]
+        ev = {"generated_at": now(), "artifacts": artifacts, "audit_id": audit_id, "run_id": ctx.run_id}
+        audit = await self._record(audit_id, lambda r: r.update(evidence=ev))
+        (root / "audit.json").write_text(json.dumps(self.public(audit), indent=2, default=str))
+        (root / "report.md").write_text(render_report(audit))
+        await ctx.stage("evidence", "passed", f"{len(artifacts)} artifacts hashed; report.md and audit.json written")
+
+    def _launch(self, ctx: RunContext, audit_id: str, coro, *, affects_audit: bool = True) -> None:
+        design_orchestrator.contexts[ctx.run_id] = ctx  # lets POST /api/runs/{id}/cancel stop audits too
+        task = asyncio.create_task(self._guard(ctx, audit_id, coro, affects_audit))
+        # hardware runs are keyed apart so a build waiting on Vivado does not block repairs
+        self.tasks[f"{audit_id}:{ctx.run_id}" if affects_audit else f"hw:{audit_id}:{ctx.run_id}"] = task
+
+    async def _guard(self, ctx: RunContext, audit_id: str, coro, affects_audit: bool = True) -> None:
         try:
             await coro
         except RunCancelled:
             await self._finish_stages(ctx, "cancelled", "cancelled by user")
             await ctx.set_status("cancelled", finished=True)
-            await self._set(audit_id, status="cancelled", finished_at=now())
+            if affects_audit:
+                await self._set(audit_id, status="cancelled", finished_at=now())
         except Exception as e:
             log.exception("security run %s crashed", ctx.run_id)
             await self._finish_stages(ctx, "failed", f"internal error: {type(e).__name__}")
             await ctx.set_status("failed", error=f"{type(e).__name__}: {e}", finished=True)
-            await self._set(audit_id, status="failed", finished_at=now())
+            if affects_audit:
+                await self._set(audit_id, status="failed", finished_at=now())
             await ctx.say(f"Internal error: {type(e).__name__}: {e}", kind="error",
                           data={"traceback": traceback.format_exc()[-4000:]})
         finally:
             design_orchestrator.contexts.pop(ctx.run_id, None)
             self.tasks.pop(f"{audit_id}:{ctx.run_id}", None)
+            self.tasks.pop(f"hw:{audit_id}:{ctx.run_id}", None)
 
     async def _finish_stages(self, ctx: RunContext, status: str, summary: str) -> None:
         run = store.get_run(ctx.run_id)
@@ -521,15 +934,20 @@ class SecurityOrchestrator:
         if agent == "reference":
             return "reference", None, ""
         droid = rep.droid_status()
-        if agent in ("auto", "factory"):
-            if droid["state"] != "unavailable":
-                return "factory", None, ""
-            if agent == "factory":
-                return None, None, f"Factory Droid unavailable: {droid['reason']}"
+        # automatic repairs use Droid only when it is explicitly configured (FACTORY_API_KEY); a CLI that
+        # may merely be logged in runs only when the user asks for it by name
+        if agent == "factory" and droid["state"] != "unavailable":
+            return "factory", None, ""
+        if agent == "auto" and droid["state"] == "configured":
+            return "factory", None, ""
+        if agent == "factory":
+            return None, None, f"Factory Droid unavailable: {droid['reason']}"
         name, prov, note = inv.pick_provider(get_settings().security_repair_model)
         if prov is not None and agent in ("auto", "model"):
             return "model", (name, prov), ""
-        reasons = [f"Factory Droid: {droid['reason']}"] if agent == "auto" else []
+        reasons = [f"Factory Droid: {droid['reason'] or 'not configured for automatic repairs'}"
+                   + (" (use 'Repair with Factory Droid' to run it on request)" if droid["state"] == "unverified" else "")] \
+            if agent == "auto" else []
         reasons.append("no model provider configured (set BITDEER_API_KEY or ANTHROPIC_API_KEY)")
         return None, None, "; ".join(reasons)
 
@@ -569,12 +987,16 @@ class SecurityOrchestrator:
 def render_report(audit: dict) -> str:
     r = audit["record"]
     case = r.get("case") or {}
+    fs = r.get("fileset")
     lines = [f"# SiliconBreak X audit {audit['id']}", "",
              f"- Case: **{case.get('title')}** (`{case.get('case_id')}`, {case.get('source_kind')})",
              f"- Provenance: {case.get('provenance')}",
              f"- Outcome: **{(r.get('outcome') or {}).get('status')}**: {(r.get('outcome') or {}).get('summary', '')}",
              f"- Tools: " + ", ".join(f"{k} {v}" for k, v in (r.get("tool_versions") or {}).items()), "",
              "## Security contract", (case.get("security_contract") or {}).get("summary", "")]
+    if fs:
+        lines[6:6] = [f"- Audited files ({len(fs.get('audited_files', []))} of {fs.get('indexed_files')} indexed): "
+                      + ", ".join(fs.get("audited_files", [])), f"- Selection: {fs.get('selection')}", ""]
     for p in (case.get("security_contract") or {}).get("properties", []):
         lines.append(f"- **{p['id']}** {p['text']}")
     inv_ = r.get("investigation") or {}
@@ -582,7 +1004,8 @@ def render_report(audit: dict) -> str:
               f"Provider: {inv_.get('provider')} ({inv_.get('model')}){'' if inv_.get('provider') != 'rules' else ' - offline static rules, not AI'}"]
     for f in r.get("findings", []):
         lines.append(f"- [{f['status']}] {f['title']} - {f['file']}:{f['line_start']}-{f['line_end']} "
-                     f"({', '.join(f['violated_properties'])}; {f.get('weakness_class', '')})")
+                     f"({', '.join(f['violated_properties'])}; {f.get('weakness_class', '')})"
+                     + (f" {f['permalink']}" if f.get("permalink") else ""))
     rp = r.get("reproduction") or {}
     lines += ["", "## Independent reproduction (trusted verifier)", f"{rp.get('status')}: {rp.get('message', '')}"]
     for t in rp.get("tests", []):

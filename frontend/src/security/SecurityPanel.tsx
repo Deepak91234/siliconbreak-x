@@ -24,7 +24,9 @@ import { useResource } from "../lib/useResource";
 import { useAppState, useStore } from "../store/store";
 import { DiffView, type DiffMode } from "../tabs/DiffView";
 import { CurrentAction } from "../workspace/Timeline";
+import { HardwareDemo } from "./HardwareDemo";
 import { ProviderStatus } from "./ProviderStatus";
+import { RepoImport } from "./RepoImport";
 import { SecurityWave } from "./SecurityWave";
 
 const SOURCE_KIND_LABEL: Record<string, string> = {
@@ -107,8 +109,34 @@ export function SecurityStart({ compact = false }: { compact?: boolean }) {
           </div>
         ))}
       </div>
+      {!compact && <ProjectAudit />}
+      {!compact && <RepoImport />}
       {!compact && <ProviderStatus />}
     </div>
+  );
+}
+
+/** Audit the selected CircuitLoop design (its generated RTL) against the generic contract. */
+function ProjectAudit() {
+  const store = useStore();
+  const projectId = useAppState((s) => s.selection.projectId);
+  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
+  const [busy, setBusy] = useState(false);
+  if (!projectId || !detail || detail.revisions.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-line bg-panel p-3.5 shadow-panel">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-fg">Audit the current CircuitLoop design</span>
+          <p className="mt-0.5 text-xs text-muted">{detail.project.title}: its generated RTL against the generic hardware-security contract.
+            Findings stay suspected (no trusted security tests exist for generated designs).</p>
+        </div>
+        <Button size="sm" variant="secondary" busy={busy}
+                onClick={async () => { setBusy(true); try { await store.startProjectAudit(projectId); } catch (e) { toast(errorMessage(e), "error"); } finally { setBusy(false); } }}>
+          Audit this design
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -152,10 +180,17 @@ function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: 
       {run && running && <CurrentAction run={run as Run} compact />}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="secondary" disabled={running} busy={busy === "new"}
-                onClick={() => act("new", () => store.startSecurityAudit(audit.case_id ?? ""))}>
+                onClick={() => act("new", () => {
+                  const fs = audit.record.fileset;
+                  if (fs?.kind === "repository" && fs.repo_id) return store.startRepoAudit(fs.repo_id, fs.audited_files);
+                  if (fs?.kind === "project") return store.startProjectAudit(audit.project_id);
+                  return store.startSecurityAudit(audit.case_id ?? "");
+                })}>
           Run audit again
         </Button>
-        <span className="mx-1 h-4 w-px bg-line" aria-hidden />
+        {!audit.case_id && <span className="text-2xs text-faint">Repairs need a case with trusted tests; this audit can only suspect.</span>}
+        {audit.case_id && <span className="mx-1 h-4 w-px bg-line" aria-hidden />}
+        {audit.case_id && <>
         <Button size="sm" variant="primary" disabled={!canRepair} busy={busy === "factory"}
                 title="Factory Droid edits an isolated copy; the trusted verifier judges the patch"
                 onClick={() => act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
@@ -171,6 +206,7 @@ function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: 
                 onClick={() => act("reference", () => securityApi.repair(audit.id, "reference").then((r) => store.putAudit(r.audit)))}>
           Validate harness (reference fix)
         </Button>
+        </>}
       </div>
     </section>
   );
@@ -188,6 +224,7 @@ function AuditBody({ audit }: { audit: SecurityAudit }) {
   return (
     <>
       <Pipeline audit={audit} />
+      {r.fileset && <ScopeCard audit={audit} />}
       <ContractCard c={c} />
       <FindingsCard audit={audit} />
       {r.reproduction && (
@@ -206,6 +243,7 @@ function AuditBody({ audit }: { audit: SecurityAudit }) {
       {shown && r.repairs.some((a) => a.verification === shown.report) && (
         <TestWave audit={audit} report={shown.report} test={shown.test} />
       )}
+      {audit.case_id && c.board && <HardwareDemo audit={audit} />}
       <EvidenceCard audit={audit} />
       <ProviderStatus />
       <Card title="Limitations">
@@ -249,7 +287,7 @@ function ContractCard({ c }: { c: SecurityCase }) {
           <li key={p.id} className="text-xs text-muted"><span className="mr-1.5 font-mono text-accent">{p.id}</span>{p.text}</li>
         ))}
       </ul>
-      <Collapsible title={<span className="text-xs">Functional contract, interface and Basys 3 mapping</span>}>
+      {c.functional_contract.length > 0 && <Collapsible title={<span className="text-xs">Functional contract, interface and Basys 3 mapping</span>}>
         <ul className="space-y-1">
           {c.functional_contract.map((p) => (
             <li key={p.id} className="text-xs text-muted"><span className="mr-1.5 font-mono text-info">{p.id}</span>{p.text}</li>
@@ -267,7 +305,33 @@ function ContractCard({ c }: { c: SecurityCase }) {
             ))}
           </div>
         )}
-      </Collapsible>
+      </Collapsible>}
+    </Card>
+  );
+}
+
+function ScopeCard({ audit }: { audit: SecurityAudit }) {
+  const fs = audit.record.fileset!;
+  return (
+    <Card title={fs.kind === "repository" ? "Repository scope" : "Design scope"}
+          actions={<span className="text-2xs text-faint">{fs.audited_files.length} audited of {fs.indexed_files} indexed</span>}>
+      {fs.kind === "repository" && fs.url && (
+        <p className="text-xs">
+          <a href={`${fs.url}/tree/${fs.sha}${fs.subdir ? `/${fs.subdir}` : ""}`} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+            {fs.url.replace("https://github.com/", "")}
+          </a>
+          <span className="ml-2 font-mono text-2xs text-faint">commit {fs.sha}</span>
+          {fs.ref && fs.ref !== fs.sha && <span className="ml-2 text-2xs text-faint">(resolved from {fs.ref})</span>}
+        </p>
+      )}
+      <p className="mt-1 text-xs text-muted">Selection: {fs.selection}. Files not listed were indexed but not read by the investigator.</p>
+      <ul className="mt-1.5 grid gap-0.5 font-mono text-2xs text-muted sm:grid-cols-2">
+        {fs.audited_files.map((f) => <li key={f} className="truncate" title={f}>{f}</li>)}
+      </ul>
+      <p className="mt-2 rounded border border-warn/40 bg-warn/5 px-2 py-1.5 text-2xs text-warn">
+        No trusted security tests or properties exist for these files, so reproduction, formal checks and repairs do not run and every
+        finding stays suspected. An empty result is not evidence that the files are secure.
+      </p>
     </Card>
   );
 }
@@ -315,7 +379,11 @@ function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | 
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <Pill tone={st.tone}>{st.label}</Pill>
         <span className="min-w-0 flex-1 text-sm font-medium">{f.title}</span>
-        <span className="font-mono text-2xs text-faint">{f.file}:{f.line_start}-{f.line_end}</span>
+        {f.permalink ? (
+          <a href={f.permalink} target="_blank" rel="noreferrer" className="font-mono text-2xs text-accent hover:underline">
+            {f.file}:{f.line_start}-{f.line_end}
+          </a>
+        ) : <span className="font-mono text-2xs text-faint">{f.file}:{f.line_start}-{f.line_end}</span>}
       </div>
       <div className="grid gap-3 p-3 lg:grid-cols-[1.1fr_1fr]">
         <div className="overflow-x-auto rounded bg-sunken py-1.5 font-mono text-[11.5px] leading-[1.55]">

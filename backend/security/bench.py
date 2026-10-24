@@ -106,8 +106,9 @@ async def _repair(case: CaseManifest, arm: str, d: Path, harness: dict, max_atte
     report = json.loads(rep_path.read_text()) if rep_path.is_file() else None
     if arm == "repair:factory":
         st = rep.droid_status()
-        if st["state"] == "unavailable":
-            return {"status": "not_run", "verdict": None, "reason": st["reason"]}
+        if st["state"] != "configured":
+            return {"status": "not_run", "verdict": None,
+                    "reason": st["reason"] or "Factory Droid is not configured (set FACTORY_API_KEY)"}
         attempts, agent = max_attempts, "factory"
         prov = None
     else:

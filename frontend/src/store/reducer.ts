@@ -20,7 +20,7 @@ import type {
   Stage,
   VisionSessionState,
 } from "../api/types";
-import { SECURITY_STAGE_KEYS, STAGE_KEYS } from "../api/types";
+import { HW_STAGE_KEYS, SECURITY_STAGE_KEYS, STAGE_KEYS } from "../api/types";
 import type { SecurityAudit } from "../api/security";
 import type { SocketInfo } from "../api/events";
 
@@ -120,7 +120,7 @@ export function initialState(): AppState {
 /** Run statuses after which the orchestrator never sets running/waiting again. */
 export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
   "passed", "passed_sim_only", "failed", "cancelled", "unsupported",
-  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error",
+  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error", "suspected_only", "no_findings",
 ]);
 
 export function isRunActive(run: Pick<Run, "status"> | null | undefined): boolean {
@@ -162,7 +162,8 @@ const SECURITY_ONLY_KEYS = new Set(["contract", "index", "investigate", "reprodu
 
 export function sortStages(stages: Stage[]): Stage[] {
   // security audit runs share the key "repair" with design runs, so pick the key order by run kind
-  const keys: readonly string[] = stages.some((s) => SECURITY_ONLY_KEYS.has(s.key)) ? SECURITY_STAGE_KEYS : STAGE_KEYS;
+  const keys: readonly string[] = stages.some((s) => SECURITY_ONLY_KEYS.has(s.key)) ? SECURITY_STAGE_KEYS
+    : stages.some((s) => s.key === "board_sim") ? HW_STAGE_KEYS : STAGE_KEYS;
   const order = (k: string) => {
     const i = keys.indexOf(k);
     return i < 0 ? 999 : i;

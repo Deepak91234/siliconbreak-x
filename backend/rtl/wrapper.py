@@ -157,7 +157,11 @@ def generate_wrapper(spec: DesignSpec, board: Board | None = None) -> str:
 
 
 def generate_xdc(spec: DesignSpec, board: Board | None = None) -> str:
-    board = board or load_board(spec.board)
+    return board_xdc(board or load_board(spec.board))
+
+
+def board_xdc(board: Board) -> str:
+    """Constraints for a top module with the standard wrapper port list (every board port)."""
     if not board.verify_source_xdc():
         raise RuntimeError("board master XDC checksum mismatch; refusing to generate constraints")
     lines = [

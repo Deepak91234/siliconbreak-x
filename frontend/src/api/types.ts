@@ -22,6 +22,9 @@ export const SECURITY_STAGE_KEYS = [
   "contract", "index", "investigate", "reproduce", "formal", "repair", "retest", "evidence",
 ] as const;
 
+/** Security-case Basys 3 build and program runs (orchestrator.HW_BUILD_STAGES / HW_PROGRAM_STAGES). */
+export const HW_STAGE_KEYS = ["board_sim", "synth", "impl", "timing", "bitstream", "detect", "program"] as const;
+
 export const STAGE_STATUSES = [
   "pending", "running", "passed", "failed", "skipped", "blocked", "unavailable", "inconclusive", "cancelled",
 ] as const;
@@ -30,7 +33,7 @@ export type StageStatus = (typeof STAGE_STATUSES)[number];
 export const RUN_STATUSES = [
   "running", "waiting", "passed", "passed_sim_only", "failed", "cancelled", "unsupported",
   // SiliconBreak X audit outcomes
-  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error",
+  "reproduced", "repaired_verified", "repair_failed", "no_violation_found", "error", "suspected_only", "no_findings",
 ] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 

@@ -25,6 +25,7 @@ import difflib
 import hashlib
 import json
 import logging
+import os
 import shutil
 import time
 from collections.abc import Awaitable, Callable
@@ -172,6 +173,8 @@ def droid_status(settings: Settings | None = None) -> dict:
         st.update(state="unavailable", reason="droid-sdk is not installed (pip install droid-sdk)")
     elif not s.droid_bin:
         st.update(state="unavailable", reason="the `droid` CLI is not on PATH (install Factory's Droid CLI, then restart)")
+    elif not (Path(s.droid_bin).is_file() and os.access(s.droid_bin, os.X_OK)):
+        st.update(state="unavailable", reason=f"the droid CLI was not found at {s.droid_bin}")
     elif not s.factory_api_key:
         st.update(state="unverified", reason="FACTORY_API_KEY is not set; a logged-in droid CLI session may still work")
     else:
@@ -238,6 +241,7 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
     from droid_sdk import (AssistantMessage, Autonomy, DroidError, ErrorEvent, InteractionHandlers, Runtime, Session,
                            SessionConfig, ToolCall, ToolResult)
 
+    root = ws.resolve()
     on_permission = make_permission_handler(ws, case.editable, rec)
 
     config = SessionConfig(autonomy=Autonomy.OFF, auto_reject_permission_requests=False,
