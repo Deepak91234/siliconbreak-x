@@ -51,6 +51,8 @@ class ContainerInfo:
     image: str | None = None
     managed_by_circuitloop: bool = False
     home_mount_source: str | None = None
+    install_mount_source: str | None = None   # isolated layout: <home>/Xilinx mount
+    install_mount_rw: bool | None = None
     started_at: str | None = None
 
 
@@ -116,6 +118,9 @@ async def _inspect(name: str, s: Settings) -> ContainerInfo:
     for m in data.get("Mounts", []):
         if m.get("Destination") == s.vivado_container_home:
             info.home_mount_source = m.get("Source")
+        elif m.get("Destination") == f"{s.vivado_container_home}/Xilinx":
+            info.install_mount_source = m.get("Source")
+            info.install_mount_rw = bool(m.get("RW"))
     return info
 
 
@@ -141,9 +146,15 @@ async def detect(settings: Settings | None = None) -> VivadoEnvironment:
     env = VivadoEnvironment(docker_cli=s.docker_bin)
     env.workspace_host = str(s.vivado_workspace_host)
     env.workspace_container = s.vivado_workspace_container
-    env.host_root_exists = (s.vivado_host_root / "Xilinx").is_dir()
-    if not env.host_root_exists:
-        env.problems.append(f"Vivado host folder {s.vivado_host_root} (with Xilinx/) not found")
+    if s.vivado_install_dir:  # isolated layout: dedicated writable root + read-only install
+        env.host_root_exists = s.vivado_host_root.is_dir() and (s.vivado_install_dir / "Vivado").is_dir()
+        if not env.host_root_exists:
+            env.problems.append(f"isolated Vivado layout incomplete: need {s.vivado_host_root} and "
+                                f"{s.vivado_install_dir}/Vivado")
+    else:
+        env.host_root_exists = (s.vivado_host_root / "Xilinx").is_dir()
+        if not env.host_root_exists:
+            env.problems.append(f"Vivado host folder {s.vivado_host_root} (with Xilinx/) not found")
 
     if not s.docker_bin:
         env.docker_error = "Docker CLI not found; install/start Docker Desktop"
@@ -169,6 +180,12 @@ async def detect(settings: Settings | None = None) -> VivadoEnvironment:
                     f"container {c.name} mounts {c.home_mount_source} at {s.vivado_container_home}, "
                     f"expected {s.vivado_host_root}"
                 )
+                continue
+            if s.vivado_install_dir and (
+                    c.install_mount_rw is not False or not c.install_mount_source
+                    or Path(c.install_mount_source).resolve() != s.vivado_install_dir.resolve()):
+                env.problems.append(f"container {c.name} does not mount {s.vivado_install_dir} read-only at "
+                                    f"{s.vivado_container_home}/Xilinx; refusing to use it")
                 continue
             env.active_container = c.name
             break
@@ -283,9 +300,20 @@ async def start_headless(settings: Settings | None = None) -> dict:
         "--name", s.vivado_headless_container,
         "--label", f"{MANAGED_LABEL}=true",
         "--platform", "linux/amd64",
-        "--mount", f"type=bind,source={s.vivado_host_root},target={s.vivado_container_home}",
-        s.vivado_image, "sleep", "infinity",
     ]
+    if s.vivado_install_dir:
+        # isolated: only the dedicated folder is writable, the install is read-only, no network,
+        # and memory pressure lands on this container first
+        for sub in (s.vivado_workspace_subdir, "Xilinx"):
+            (s.vivado_host_root / sub).mkdir(parents=True, exist_ok=True)
+        argv += ["--label", "siliconbreak=true", "--network", "none",
+                 "--memory", s.vivado_memory, "--memory-swap", s.vivado_memory, "--oom-score-adj", "1000",
+                 "--cpus", s.vivado_cpus,
+                 "--mount", f"type=bind,source={s.vivado_host_root},target={s.vivado_container_home}",
+                 "--mount", f"type=bind,source={s.vivado_install_dir},target={s.vivado_container_home}/Xilinx,readonly"]
+    else:
+        argv += ["--mount", f"type=bind,source={s.vivado_host_root},target={s.vivado_container_home}"]
+    argv += [s.vivado_image, "sleep", "infinity"]
     r = await run_command(argv, timeout_s=120)
     if not r.ok:
         return {"ok": False, "message": (r.text or r.error or "docker run failed")[-500:]}

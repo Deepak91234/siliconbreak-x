@@ -89,6 +89,37 @@ still match the verified hashes) runs:
 manager re-verifies the approval and the file hash before writing SRAM (never flash). The UI never records what the LEDs
 physically showed; that is your observation on the board.
 
+## Isolated Vivado (protecting the university setup)
+
+The `x64-linux` image contains only Ubuntu and libraries; Vivado 2023.2 (34 GB) lives inside the coursework bind
+mount at `~/cse100/cse100-vivado-on-silicon-mac-main/Xilinx`. SiliconBreak X builds therefore run in a separate
+container that never sees the coursework:
+
+| Host | `siliconbreak_vivado` | Mode |
+|---|---|---|
+| `~/siliconbreak_vivado` | `/home/user` | read-write: build workspace `ws/`, logs, Vivado's own fresh `~/.Xilinx` |
+| `~/cse100/…/Xilinx` | `/home/user/Xilinx` | **read-only**: the Vivado install only |
+
+It runs with `--network none`, no ports, `--memory 2560m --memory-swap 2560m --oom-score-adj 1000 --cpus 3`, `--rm`.
+`vivado_container`, the coursework folders, `.Xilinx` settings and the launcher are never mounted, stopped or changed.
+CircuitLoop is pointed at it through `.env` (`CIRCUITLOOP_VIVADO_CONTAINER`, `CIRCUITLOOP_VIVADO_HOST_ROOT`,
+`CIRCUITLOOP_VIVADO_INSTALL_DIR`, `CIRCUITLOOP_VIVADO_WORKSPACE_SUBDIR=ws`, `CIRCUITLOOP_VIVADO_MAX_THREADS=2`). With
+`CIRCUITLOOP_VIVADO_INSTALL_DIR` set, CircuitLoop refuses any container whose install mount is not read-only or whose
+home mount is not the dedicated folder, and its own "start headless container" button creates exactly this container.
+Verified inside the container: the install is mounted `ro` (writes fail), only `ws`/`Xilinx` are visible, no network.
+
+**Built on 2026-10-24** (audit `sa_f158563bbb`, data in `runs/siliconbreak_isolated/`):
+
+| Variant | Board-level sim | Timing (100 MHz) | LUT / FF | Bitstream sha256 |
+|---|---|---|---|---|
+| before: vulnerable | D1 differs (`0x80A5` vs `0x4000`) | WNS +5.528 ns, WHS +0.122 ns | 54 / 128 | `e6701e493f96797c7ef8ed90cfba4a6ae398fde2bcb52a23f7ddcf8291d2e55e` |
+| after: human reference fix | all 4 steps match | WNS +5.119 ns, WHS +0.131 ns | 53 / 128 | `47e01531540653dfa21294d4654cc57f9fd7469de677e9dd891e82a83790bf43` |
+
+Both 2,192,118 bytes, Vivado 2023.2 in `siliconbreak_vivado` (224 s and 333 s). Nothing under `~/cse100` changed during the
+builds; the only file activity there came from an older CircuitLoop backend still running with the previous
+configuration (transient `.probe` tokens in `circuitloop_ws/`), which a restart of `./scripts/dev.sh` ends. The board has
+not been programmed.
+
 ## Status ladders
 
 Findings: `suspected → reproduced → patch_proposed → repaired_verified` (or `repair_failed`,
@@ -189,6 +220,6 @@ Not yet run (needs you):
 | Claude investigation / model repair | no `ANTHROPIC_API_KEY` | add key, restart, **Repair with model** |
 | Factory Droid repair | `droid` CLI 0.249.0 is now installed (`~/.local/bin/droid`); no `FACTORY_API_KEY` | log the CLI in or set `FACTORY_API_KEY`, then **Repair with Factory Droid** (explicit click). Automatic repairs during an audit use Droid only when `FACTORY_API_KEY` is set. The attempt shows the session id, trace and refused actions |
 | Baseline vs assisted comparison | needs a model key | **Run SiliconBench** after adding a key |
-| Basys 3 before/after: Vivado build | `vivado_container` not running | start your container (or approve the headless one), then **Simulate + build** for *before* and *after* in the Security tab |
+| Basys 3 before/after: Vivado build | done in the isolated `siliconbreak_vivado` (see above) | rebuild from the Security tab after an agent repair to get an agent-patched *after* |
 | Basys 3 before/after: programming | board not connected | plug in the Basys 3, **Program…**, approve, then run demo steps D1–D4 on the board and compare with the listed LED patterns |
 | Historical cases from public repositories | no case manifest with trusted tests written yet | a pinned historical case needs a contract, a trusted testbench and its fix commit; repository audits today stop at *suspected* |

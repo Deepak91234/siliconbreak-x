@@ -83,6 +83,14 @@ class Settings:
     host: str
     port: int
 
+    # Isolated Vivado container (optional). When set, the Vivado install is a separate,
+    # read-only mount at <container home>/Xilinx, and vivado_host_root is a dedicated
+    # writable folder instead of the user's Vivado home. CircuitLoop then refuses any
+    # container that does not mount the install read-only.
+    vivado_install_dir: Path | None = None
+    vivado_memory: str = "2560m"
+    vivado_cpus: str = "3"
+
     # SiliconBreak X (security). Keys stay in this process like ANTHROPIC_API_KEY.
     bitdeer_api_key: str | None = field(default=None, repr=False)
     bitdeer_base_url: str = "https://api-inference.bitdeer.ai/v1"
@@ -116,6 +124,7 @@ class Settings:
             "vivado_workspace_host": str(self.vivado_workspace_host),
             "vivado_workspace_container": self.vivado_workspace_container,
             "vivado_version": self.vivado_version,
+            "vivado_install_dir": str(self.vivado_install_dir) if self.vivado_install_dir else None,
             "verilator_bin": self.verilator_bin,
             "openfpgaloader_bin": self.openfpgaloader_bin,
             "sim_clk_hz": self.sim_clk_hz,
@@ -165,6 +174,10 @@ def get_settings() -> Settings:
         max_repair_attempts=int(get("CIRCUITLOOP_MAX_REPAIR_ATTEMPTS", "3")),
         host=get("CIRCUITLOOP_HOST", "127.0.0.1"),
         port=int(get("CIRCUITLOOP_PORT", "8000")),
+        vivado_install_dir=Path(env["CIRCUITLOOP_VIVADO_INSTALL_DIR"]).expanduser()
+        if env.get("CIRCUITLOOP_VIVADO_INSTALL_DIR") else None,
+        vivado_memory=get("CIRCUITLOOP_VIVADO_MEMORY", "2560m"),
+        vivado_cpus=get("CIRCUITLOOP_VIVADO_CPUS", "3"),
         bitdeer_api_key=env.get("BITDEER_API_KEY") or None,
         bitdeer_base_url=get("BITDEER_BASE_URL", "https://api-inference.bitdeer.ai/v1").rstrip("/"),
         bitdeer_model=get("BITDEER_MODEL", "deepseek-ai/DeepSeek-V4-Pro"),
