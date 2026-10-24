@@ -25,6 +25,7 @@ from backend.agent import approvals
 from backend.api import environment, vision_service
 from backend.api.guide_routes import router as guide_router
 from backend.api.routes import router
+from backend.api.security_routes import router as security_router
 from backend.core.config import REPO_ROOT, get_settings
 from backend.core.events import Event, bus
 from backend.storage import store
@@ -133,6 +134,7 @@ async def reject_cross_origin_writes(request: Request, call_next):
 
 app.include_router(router)
 app.include_router(guide_router)
+app.include_router(security_router)
 
 
 @app.websocket("/ws/events")

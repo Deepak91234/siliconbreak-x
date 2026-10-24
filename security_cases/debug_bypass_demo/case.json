@@ -1,0 +1,86 @@
+{
+  "case_id": "debug_bypass_demo",
+  "title": "Debug-mode access-control bypass",
+  "source_kind": "demo",
+  "provenance": "Intentionally vulnerable demonstration design written for SiliconBreak X. It is not a historical bug or a real-world vulnerability and is excluded from historical-security metrics.",
+  "cwe": ["CWE-1191", "CWE-284"],
+  "repository": null,
+  "commit": null,
+  "license": "Same license as this repository (authored here)",
+  "top_module": "debug_access_ctrl",
+  "editable": ["rtl/debug_access_ctrl.v"],
+  "description": "A protected-register read port shared by normal requesters and an on-chip debug interface. STATUS (addr 0) is public; SECRET (addr 1) holds a synthetic provisioned value (8'hA5) that only authorized requesters may read.",
+  "interface": [
+    {"port": "clk", "dir": "input", "width": 1, "text": "clock"},
+    {"port": "reset", "dir": "input", "width": 1, "text": "synchronous, active-high reset"},
+    {"port": "read_req", "dir": "input", "width": 1, "text": "read request (sampled every cycle)"},
+    {"port": "addr", "dir": "input", "width": 1, "text": "0 = STATUS (public), 1 = SECRET (protected)"},
+    {"port": "authorized", "dir": "input", "width": 1, "text": "permission of the current requester, from the access-control fabric"},
+    {"port": "debug_mode", "dir": "input", "width": 1, "text": "debug/test interface active"},
+    {"port": "read_grant", "dir": "output", "width": 1, "text": "response: request granted (one cycle after the request)"},
+    {"port": "read_data", "dir": "output", "width": 8, "text": "response data; zero unless read_grant"},
+    {"port": "access_denied", "dir": "output", "width": 1, "text": "response: request refused"}
+  ],
+  "security_contract": {
+    "summary": "No requester without authorization may read the protected SECRET register, including through the on-chip debug interface.",
+    "properties": [
+      {"id": "P-NOLEAK", "text": "When authorized == 0, a SECRET read must not assert read_grant, must drive read_data == 0, and must assert access_denied on the response cycle, whatever the value of debug_mode."},
+      {"id": "P-DEBUG", "text": "debug_mode must not grant a permission that the requester does not already have."}
+    ]
+  },
+  "functional_contract": [
+    {"id": "F-1", "text": "An authorized SECRET read returns read_grant = 1 and read_data = SECRET, with or without debug_mode."},
+    {"id": "F-2", "text": "A STATUS read by anyone returns read_grant = 1 and read_data = {debug_mode, DEVICE_ID[6:0]}."},
+    {"id": "F-3", "text": "Reset clears all outputs; requests during reset are ignored."},
+    {"id": "F-4", "text": "A denied request does not affect later legitimate requests; outputs are idle when there is no request."}
+  ],
+  "verification": {
+    "testbench": "tests/tb_debug_access_ctrl.sv",
+    "tb_top": "tb",
+    "timeout_s": 120,
+    "tests": [
+      {"id": "F-RESET", "kind": "functional", "properties": ["F-3"], "title": "Reset clears outputs and ignores requests"},
+      {"id": "F-AUTH-READ", "kind": "functional", "properties": ["F-1"], "title": "Authorized SECRET read"},
+      {"id": "F-AUTH-DEBUG-READ", "kind": "functional", "properties": ["F-1"], "title": "Authorized SECRET read in debug mode"},
+      {"id": "F-STATUS-READ", "kind": "functional", "properties": ["F-2"], "title": "Public STATUS read"},
+      {"id": "F-RECOVERY", "kind": "functional", "properties": ["F-4"], "title": "Legitimate read after a denial"},
+      {"id": "F-IDLE", "kind": "functional", "properties": ["F-4"], "title": "Idle outputs without a request"},
+      {"id": "F-RANDOM-MODEL", "kind": "functional", "properties": ["F-1", "F-2", "F-3", "F-4"], "title": "4000 random cycles of legitimate traffic match the contract model"},
+      {"id": "S-UNAUTH-READ", "kind": "security", "properties": ["P-NOLEAK"], "title": "Unauthorized SECRET read is denied"},
+      {"id": "S-UNAUTH-DEBUG-READ", "kind": "security", "properties": ["P-NOLEAK", "P-DEBUG"], "title": "Unauthorized SECRET read in debug mode is denied"},
+      {"id": "S-DEAUTH", "kind": "security", "properties": ["P-NOLEAK", "P-DEBUG"], "title": "Access ends when authorization is withdrawn"},
+      {"id": "S-REPEATED-DEBUG", "kind": "security", "properties": ["P-NOLEAK", "P-DEBUG"], "title": "Back-to-back unauthorized debug reads never leak"},
+      {"id": "S-RANDOM-NOLEAK", "kind": "security", "properties": ["P-NOLEAK", "P-DEBUG"], "title": "P-NOLEAK holds on 4000 random cycles"}
+    ]
+  },
+  "formal": {
+    "wrapper": "tests/formal_props.v",
+    "top": "debug_access_ctrl_formal",
+    "properties": ["P-NOLEAK", "P-DEBUG"],
+    "max_steps": 20
+  },
+  "ground_truth": {
+    "file": "rtl/debug_access_ctrl.v",
+    "lines": [46, 55],
+    "properties": ["P-NOLEAK", "P-DEBUG"],
+    "weakness": "CWE-1191",
+    "summary": "The SECRET branch grants access when debug_mode is set, without authorization."
+  },
+  "reference_fix": {
+    "files": {"rtl/debug_access_ctrl.v": "reference/debug_access_ctrl.v"},
+    "author": "human-written reference for harness validation"
+  },
+  "board": {
+    "wrapper": "board/basys3_top.v",
+    "mapping": [
+      {"control": "BTNU", "signal": "read_req", "text": "hold to issue reads"},
+      {"control": "SW1", "signal": "authorized", "text": "requester is authorized (simulated permission input)"},
+      {"control": "SW2", "signal": "debug_mode", "text": "debug interface active"},
+      {"control": "SW3", "signal": "addr", "text": "off = STATUS, on = SECRET"},
+      {"control": "BTNC", "signal": "reset", "text": "reset"},
+      {"control": "LED0-LED7", "signal": "read_data", "text": "response data"},
+      {"control": "LED15", "signal": "read_grant", "text": "request granted"},
+      {"control": "LED14", "signal": "access_denied", "text": "request denied"}
+    ]
+  }
+}

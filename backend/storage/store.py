@@ -117,11 +117,18 @@ def initial_stages() -> list[dict]:
              "finished_at": None, "detail": {}} for k, label in STAGES]
 
 
-def create_run(project_id: str, *, trigger: str, request_text: str, options: dict) -> dict:
+def stages_from(pairs: list[tuple[str, str]]) -> list[dict]:
+    return [{"key": k, "label": label, "status": "pending", "summary": "", "started_at": None,
+             "finished_at": None, "detail": {}} for k, label in pairs]
+
+
+def create_run(project_id: str, *, trigger: str, request_text: str, options: dict,
+               stages: list[tuple[str, str]] | None = None) -> dict:
     rid = new_id("run")
     get_db().insert("runs", {
         "id": rid, "project_id": project_id, "trigger": trigger, "request_text": request_text,
-        "status": "running", "revision_ids": [], "stages": initial_stages(), "options": options,
+        "status": "running", "revision_ids": [], "stages": stages_from(stages) if stages else initial_stages(),
+        "options": options,
         "created_at": now(),
     })
     touch_project(project_id, latest_run_id=rid)
@@ -202,3 +209,61 @@ def update_vision_session(session_id: str, **fields) -> None:
 
 def get_vision_session(session_id: str) -> dict | None:
     return get_db().get("vision_sessions", session_id)
+
+
+# ------------------------------------------------------- security (SiliconBreak X)
+
+def security_dir() -> Path:
+    return runs_root() / "security"
+
+
+def create_security_audit(*, project_id: str, source_kind: str, case_id: str | None, repo_url: str | None = None,
+                          commit_sha: str | None = None, options: dict | None = None) -> dict:
+    aid = new_id("sa")
+    d = security_dir() / aid
+    d.mkdir(parents=True, exist_ok=True)
+    get_db().insert("security_audits", {
+        "id": aid, "project_id": project_id, "source_kind": source_kind, "case_id": case_id, "repo_url": repo_url,
+        "commit_sha": commit_sha, "status": "created", "dir": str(d), "options": options or {}, "record": {},
+        "created_at": now(),
+    })
+    return get_security_audit(aid)  # type: ignore[return-value]
+
+
+def get_security_audit(audit_id: str) -> dict | None:
+    return get_db().get("security_audits", audit_id)
+
+
+def update_security_audit(audit_id: str, **fields) -> dict:
+    get_db().update("security_audits", audit_id, fields)
+    return get_security_audit(audit_id)  # type: ignore[return-value]
+
+
+def list_security_audits(project_id: str | None = None, case_id: str | None = None) -> list[dict]:
+    if project_id:
+        return get_db().query("SELECT * FROM security_audits WHERE project_id = ? ORDER BY created_at", (project_id,))
+    if case_id:
+        return get_db().query("SELECT * FROM security_audits WHERE case_id = ? ORDER BY created_at", (case_id,))
+    return get_db().query("SELECT * FROM security_audits ORDER BY created_at")
+
+
+def create_bench_run(config: dict) -> dict:
+    bid = new_id("bench")
+    d = security_dir() / "bench" / bid
+    d.mkdir(parents=True, exist_ok=True)
+    get_db().insert("bench_runs", {"id": bid, "status": "running", "dir": str(d), "config": config,
+                                   "created_at": now()})
+    return get_db().get("bench_runs", bid)  # type: ignore[return-value]
+
+
+def get_bench_run(bench_id: str) -> dict | None:
+    return get_db().get("bench_runs", bench_id)
+
+
+def update_bench_run(bench_id: str, **fields) -> dict:
+    get_db().update("bench_runs", bench_id, fields)
+    return get_bench_run(bench_id)  # type: ignore[return-value]
+
+
+def list_bench_runs() -> list[dict]:
+    return get_db().query("SELECT * FROM bench_runs ORDER BY created_at")

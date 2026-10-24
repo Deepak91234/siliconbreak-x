@@ -83,6 +83,16 @@ class Settings:
     host: str
     port: int
 
+    # SiliconBreak X (security). Keys stay in this process like ANTHROPIC_API_KEY.
+    bitdeer_api_key: str | None = field(default=None, repr=False)
+    bitdeer_base_url: str = "https://api-inference.bitdeer.ai/v1"
+    bitdeer_model: str = "deepseek-ai/DeepSeek-V4-Pro"
+    factory_api_key: str | None = field(default=None, repr=False)
+    droid_bin: str | None = None
+    droid_model: str | None = None
+    security_investigator: str = "auto"   # auto | bitdeer | anthropic | rules
+    security_repair_model: str = "auto"   # auto | bitdeer | anthropic (model-patch repairs)
+
     @property
     def vivado_workspace_host(self) -> Path:
         return self.vivado_host_root / self.vivado_workspace_subdir
@@ -113,6 +123,11 @@ class Settings:
             "llm_model": self.llm_model,
             "llm_configured": self.llm_configured,
             "max_repair_attempts": self.max_repair_attempts,
+            "bitdeer_configured": bool(self.bitdeer_api_key),
+            "bitdeer_model": self.bitdeer_model,
+            "factory_configured": bool(self.factory_api_key),
+            "droid_bin": self.droid_bin,
+            "security_investigator": self.security_investigator,
         }
 
 
@@ -150,4 +165,13 @@ def get_settings() -> Settings:
         max_repair_attempts=int(get("CIRCUITLOOP_MAX_REPAIR_ATTEMPTS", "3")),
         host=get("CIRCUITLOOP_HOST", "127.0.0.1"),
         port=int(get("CIRCUITLOOP_PORT", "8000")),
+        bitdeer_api_key=env.get("BITDEER_API_KEY") or None,
+        bitdeer_base_url=get("BITDEER_BASE_URL", "https://api-inference.bitdeer.ai/v1").rstrip("/"),
+        bitdeer_model=get("BITDEER_MODEL", "deepseek-ai/DeepSeek-V4-Pro"),
+        factory_api_key=env.get("FACTORY_API_KEY") or None,
+        droid_bin=env.get("SILICONBREAK_DROID") or _which("droid", str(HOME / ".local" / "bin"), str(HOME / ".factory" / "bin"),
+                                                        "/opt/homebrew/bin", "/usr/local/bin"),
+        droid_model=env.get("SILICONBREAK_DROID_MODEL") or None,
+        security_investigator=get("SILICONBREAK_INVESTIGATOR", "auto"),
+        security_repair_model=get("SILICONBREAK_REPAIR_MODEL", "auto"),
     )

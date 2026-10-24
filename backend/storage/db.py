@@ -99,6 +99,33 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at REAL,
     result_json TEXT
 );
+-- SiliconBreak X (additive): security audits and SiliconBench runs. An audit's
+-- live progress is an ordinary run (runs.trigger = 'security_audit').
+CREATE TABLE IF NOT EXISTS security_audits (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    run_id TEXT,
+    source_kind TEXT NOT NULL,
+    case_id TEXT,
+    repo_url TEXT,
+    commit_sha TEXT,
+    status TEXT NOT NULL,
+    dir TEXT NOT NULL,
+    options_json TEXT NOT NULL DEFAULT '{}',
+    record_json TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL,
+    finished_at REAL
+);
+CREATE INDEX IF NOT EXISTS ix_security_audits_project ON security_audits(project_id, created_at);
+CREATE TABLE IF NOT EXISTS bench_runs (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    dir TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
+    result_json TEXT,
+    created_at REAL NOT NULL,
+    finished_at REAL
+);
 CREATE TABLE IF NOT EXISTS vision_sessions (
     id TEXT PRIMARY KEY,
     revision_id TEXT NOT NULL,
@@ -115,6 +142,7 @@ JSON_COLUMNS = {
     "spec_json", "requirements_json", "observations_json", "files_json", "safety_json",
     "change_summary_json", "simulation_json", "build_json", "verification_json",
     "revision_ids_json", "stages_json", "options_json", "data_json", "details_json", "result_json",
+    "record_json", "config_json",
 }
 
 
