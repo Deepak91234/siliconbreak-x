@@ -39,7 +39,7 @@ class BudgetedProvider:
             res = await self.inner.structured(purpose=purpose, system=system, messages=messages,
                                               output_model=output_model, max_tokens=max_tokens)
         except LLMError as e:
-            budget.settle(rid, ok=False, error_kind=e.kind)
+            budget.settle(rid, ok=False, error_kind=e.kind, usage=(e.details or {}).get("usage") or None)
             raise
         except BaseException:
             budget.settle(rid, ok=False, error_kind="network")

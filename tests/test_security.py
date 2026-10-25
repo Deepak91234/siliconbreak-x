@@ -555,3 +555,54 @@ async def test_project_audit_stays_suspected_without_trusted_tests(client):
     src = (await c.get(f"/api/security/audits/{a['id']}/sources")).json()["original"]
     assert "rtl/cl_core.v" in src and "module cl_core" in src["rtl/cl_core.v"]
     assert (await c.post("/api/security/audits", json={"project_id": pid, "case_id": CASE})).status_code == 400
+
+
+async def test_bitdeer_salvages_a_complete_answer_from_a_runaway_completion():
+    """GLM-5.3 answered correctly, then repeated a sentence until max_tokens (seen live): the complete
+    JSON object at the start is used; a truncated object is still an error, with usage kept."""
+    from backend.agent.llm.bitdeer_provider import BitdeerProvider
+    from backend.security.investigate import InvestigationOut
+
+    good = json.dumps({"summary": "debug bypass {not a brace issue}", "areas_reviewed": ["rtl"], "findings": []})
+    bodies = iter([good + " The audit is complete." * 200, '{"summary": "cut off mid-str'])
+
+    def handler(req):
+        return httpx.Response(200, json={"id": "r", "model": "m", "usage": {"prompt_tokens": 900, "completion_tokens": 8000},
+                                         "choices": [{"finish_reason": "length", "message": {"content": next(bodies)}}]})
+    p = BitdeerProvider("k", "m", transport=httpx.MockTransport(handler))
+    res = await p.structured(purpose="t", system="s", messages=[{"role": "user", "content": "u"}], output_model=InvestigationOut)
+    assert res.stop_reason == "length_salvaged" and res.value.summary.startswith("debug bypass")
+    with pytest.raises(LLMError) as ei:
+        await p.structured(purpose="t", system="s", messages=[{"role": "user", "content": "u"}], output_model=InvestigationOut)
+    assert ei.value.kind == "invalid_output" and ei.value.details["usage"]["completion_tokens"] == 8000
+
+
+async def test_raw_droid_permission_handler_is_strict(tmp_path):
+    """Wire-level handler (droid-sdk 0.5.0 cannot parse ApplyPatch-via-Script requests from CLI 0.249)."""
+    ws = tmp_path / "ws"
+    (ws / "rtl").mkdir(parents=True)
+    rec: dict = {}
+    typed = rep.make_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec)
+    h = rep.make_raw_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec, typed, log_raw=None)
+    opts = [{"label": "Yes", "value": "proceed_once"}, {"label": "Always (new)", "value": "proceed_always_script_v2"},
+            {"label": "No", "value": "cancel"}]
+
+    def req(details, tool="Script"):
+        return {"toolUses": [{"toolUse": {"type": "tool_use", "id": "t", "name": tool, "input": {}},
+                              "confirmationType": details.get("type"), "details": details}], "options": opts}
+
+    target = str(ws / "rtl/debug_access_ctrl.v")
+    ok = req({"type": "apply_patch", "filePath": target, "fileName": "debug_access_ctrl.v", "patchContent": "...",
+              "files": [{"filePath": target, "operation": "update"}]})
+    assert (await h(ok))["selectedOption"] == "proceed_once"
+    assert rec["sdk_parse_fallbacks"]   # the unknown option value made the SDK's strict parse fail
+    for bad in (
+        req({"type": "apply_patch", "filePath": str(tmp_path / "x.v"), "files": [{"filePath": str(tmp_path / "x.v"), "operation": "update"}]}),
+        req({"type": "apply_patch", "filePath": target, "files": [{"filePath": target, "operation": "delete"}]}),
+        req({"type": "apply_patch", "filePath": target, "files": [{"filePath": target, "operation": "update", "moveTo": "y.v"}]}),
+        req({"type": "exec", "fullCommand": "rm -rf /", "command": "rm"}),
+        req({"type": "edit", "filePath": "../../etc/passwd"}),
+        {"toolUses": "garbage", "options": opts},
+    ):
+        assert (await h(bad))["selectedOption"] == "cancel"
+    assert rec["denied_actions"]

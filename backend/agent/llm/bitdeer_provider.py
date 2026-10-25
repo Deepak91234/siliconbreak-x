@@ -37,6 +37,32 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.S)
 
 
+def first_json_object(text: str) -> str | None:
+    """The first complete top-level JSON object in text (string-aware brace matching), or None."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
 def clean_json_text(text: str) -> str:
     t = _THINK_RE.sub("", text or "").strip()
     m = _FENCE_RE.match(t)
@@ -95,6 +121,8 @@ class BitdeerProvider:
             "messages": [{"role": "system", "content": sys_text}, *messages],
             "max_tokens": max_tokens,
             "temperature": 0,
+            # discourages the sentence loops seen from some models at temperature 0
+            "frequency_penalty": 0.3,
         }
         if fmt == "json_schema":
             body["response_format"] = {"type": "json_schema",
@@ -139,13 +167,32 @@ class BitdeerProvider:
         log.info("LLM call: provider=bitdeer purpose=%s model=%s finish=%s duration=%.1fs usage=%s",
                  purpose, served, finish, duration, usage)
         if finish == "length":
+            # Some models finish a valid answer and then run on (e.g. repeating a sentence) until max_tokens.
+            # A complete JSON object at the start that validates against the schema is the model's real answer.
+            obj = first_json_object(_THINK_RE.sub("", raw))
+            if obj is not None:
+                try:
+                    value = parse_structured_text(obj, output_model, provider=self.name, model=served,
+                                                  request_id=request_id)
+                except LLMError:
+                    value = None
+                if value is not None:
+                    log.warning("Bitdeer output hit max_tokens after a complete answer; using the first JSON object")
+                    return LLMResult[output_model](  # type: ignore[valid-type]
+                        value=value, text=obj, model=served, provider=self.name, stop_reason="length_salvaged",
+                        usage=usage, duration_s=round(duration, 3), request_id=request_id)
             raise LLMError("invalid_output", f"output was truncated (finish_reason=length, max_tokens={max_tokens})",
-                           provider=self.name, model=served, request_id=request_id, raw_text=raw)
+                           provider=self.name, model=served, request_id=request_id, raw_text=raw,
+                           details={"usage": usage})
         if finish == "content_filter":
             raise LLMError("refusal", "the provider's content filter stopped the response", provider=self.name,
                            model=served, request_id=request_id)
         text = clean_json_text(raw)
-        value = parse_structured_text(text, output_model, provider=self.name, model=served, request_id=request_id)
+        try:
+            value = parse_structured_text(text, output_model, provider=self.name, model=served, request_id=request_id)
+        except LLMError as e:
+            e.details = {**e.details, "usage": usage}   # billed even though unusable: keep the real usage
+            raise
         return LLMResult[output_model](  # type: ignore[valid-type]
             value=value, text=text, model=served, provider=self.name, stop_reason=finish, usage=usage,
             duration_s=round(duration, 3), request_id=request_id)

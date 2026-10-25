@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.agent.llm.base import LLMError, LLMProvider
 from backend.core.config import Settings, get_settings
@@ -33,6 +33,18 @@ log = logging.getLogger("siliconbreak.investigate")
 MAX_CONTEXT_CHARS = 120_000
 
 
+def _trimmed(limit: int):
+    """A string field with a length hint the model can see (maxLength). Overlong text is trimmed, not
+    rejected, so one runaway sentence does not throw away an otherwise valid finding."""
+    def _trim(v: object) -> object:
+        return v[:limit] if isinstance(v, str) and len(v) > limit else v
+    return _trim
+
+
+def _short(description: str, limit: int):
+    return Field(description=description, json_schema_extra={"maxLength": limit})
+
+
 class FindingOut(BaseModel):
     title: str = Field(description="one-line description of the weakness")
     weakness_class: str = Field(description="CWE id (e.g. CWE-1191) or a short weakness class")
@@ -40,17 +52,23 @@ class FindingOut(BaseModel):
     line_start: int
     line_end: int
     violated_properties: list[str] = Field(description="ids of the security-contract properties this violates")
-    severity_reasoning: str
-    hypothesis: str = Field(description="concrete input condition under which the property fails")
-    proposed_test: str = Field(description="a stimulus sequence that would demonstrate the failure")
+    severity_reasoning: str = _short("why this matters, at most 3 sentences", 800)
+    hypothesis: str = _short("concrete input condition under which the property fails", 800)
+    proposed_test: str = _short("a stimulus sequence that would demonstrate the failure", 800)
     confidence: Literal["low", "medium", "high"]
-    limitations: str = ""
+    limitations: str = Field(default="", json_schema_extra={"maxLength": 600})
+
+    _trim_reason = field_validator("severity_reasoning", "hypothesis", "proposed_test", mode="before")(_trimmed(800))
+    _trim_limits = field_validator("limitations", mode="before")(_trimmed(600))
 
 
 class InvestigationOut(BaseModel):
-    summary: str
-    areas_reviewed: list[str] = Field(default_factory=list)
-    findings: list[FindingOut] = Field(default_factory=list)
+    summary: str = _short("overall conclusion in at most 3 sentences; details belong in findings", 600)
+    # required (no defaults): a model may not answer with a summary alone
+    areas_reviewed: list[str] = Field(description="files or modules you reviewed")
+    findings: list[FindingOut] = Field(description="one entry per contract violation; [] if there is none")
+
+    _trim_summary = field_validator("summary", mode="before")(_trimmed(600))
 
 
 SYSTEM_PROMPT = """You are a hardware security reviewer auditing Verilog/SystemVerilog RTL against a written security contract.
@@ -61,7 +79,9 @@ Rules:
 - Cite exact file names and line numbers as numbered in the input. Line ranges must cover the code that causes the violation.
 - State a concrete hypothesis: which input values, in which order, make the property fail.
 - Do not claim a weakness is confirmed; an independent verifier will test it.
-- If you find no contract violation, return an empty findings list. Do not invent findings."""
+- If you find no contract violation, return an empty findings list. Do not invent findings.
+- Every weakness must be its own entry in "findings" with file, line_start, line_end and violated_properties; a weakness described only in "summary" is ignored.
+- Keep "summary" to at most 3 sentences. Stop immediately after the closing brace of the JSON object."""
 
 
 def _numbered(text: str) -> str:
@@ -178,11 +198,17 @@ async def investigate(contract: dict, interface: list[dict], files: dict[str, st
     t0 = time.monotonic()
     if provider is not None:
         try:
+            # Claude needs room for adaptive thinking; Bitdeer models answer in ~1-2k tokens and a runaway
+            # completion should not burn 16k tokens of credit.
+            max_tok = 8000 if name == "bitdeer" else 16000
             res = await provider.structured(purpose="security-investigate", system=SYSTEM_PROMPT,
                                             messages=[{"role": "user", "content": user}],
-                                            output_model=InvestigationOut, max_tokens=16000)
+                                            output_model=InvestigationOut, max_tokens=max_tok)
             out = res.value
             assert out is not None
+            if res.stop_reason == "length_salvaged":
+                rec["note"] = (rec.get("note") + "; " if rec.get("note") else "") + \
+                    "the model ran past its answer until the token limit; the complete JSON answer at the start was used"
             rec.update(model=res.model, usage=res.usage, request_id=res.request_id, summary=out.summary,
                        areas_reviewed=out.areas_reviewed, duration_s=round(time.monotonic() - t0, 3))
             (out_dir / "response.json").write_text(res.text or "")

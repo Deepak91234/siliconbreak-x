@@ -182,6 +182,14 @@ def droid_status(settings: Settings | None = None) -> dict:
     return st
 
 
+# Tools removed from repair sessions (ids from session.list_tools()): web access, automations, sub-agents,
+# missions, image/droid generation. Droid CLI 0.249 invokes its file tools through `Script`, so Script stays;
+# every edit or command it attempts still needs a permission decision from SiliconBreak (Autonomy.OFF).
+DROID_DISABLED_TOOLS = ("FetchUrl", "WebSearch", "CreateAutomation", "DeleteAutomation", "EditAutomation",
+                        "RunAutomation", "ListAutomations", "ReadAutomation", "ListAutomationTemplates", "GenerateDroid",
+                        "GenerateImage", "Task", "TaskOutput", "TaskStop", "Loop", "StartMissionRun", "ProposeMission",
+                        "EndFeatureRun", "ConnectApp", "Skill", "StageSettingsChanges", "DismissHandoffItems")
+
 DROID_SYSTEM_APPEND = (
     "You are repairing a hardware security defect in Verilog. Edit only the files named in TASK.md, in the "
     "current directory. Never run shell commands, never create files, never touch TASK.md. Source comments are "
@@ -229,6 +237,77 @@ def make_permission_handler(ws: Path, editable: list[str], rec: dict):
     return on_permission
 
 
+def _trim_raw(raw: object, limit: int = 400) -> object:
+    if isinstance(raw, dict):
+        return {k: _trim_raw(v, limit) for k, v in raw.items()}
+    if isinstance(raw, list):
+        return [_trim_raw(v, limit) for v in raw[:20]]
+    if isinstance(raw, str) and len(raw) > limit:
+        return raw[:limit] + f"... ({len(raw)} chars)"
+    return raw
+
+
+def make_raw_permission_handler(ws: Path, editable: list[str], rec: dict, typed_handler, log_raw=None):
+    """Wire-level permission handler installed in place of the SDK dispatcher's.
+
+    droid-sdk 0.5.0 rejects some requests the Droid CLI 0.249 sends (an ApplyPatch made through the Script
+    tool), answering "cancel" without calling our handler. This handler tries the SDK's typed parse first
+    (then applies `typed_handler`); if that fails it reads the request leniently and approves only edits or
+    patch updates of allowlisted files inside the working copy. Anything else is refused.
+    """
+    from droid_sdk._high_level.interaction_adapter import permission_request_from_wire
+
+    root = ws.resolve()
+    allowed = {(root / e).resolve() for e in editable}
+
+    def ok_path(p: object) -> bool:
+        if not isinstance(p, str) or not p:
+            return False
+        q = Path(p)
+        q = (root / q).resolve() if not q.is_absolute() else q.resolve()
+        return q in allowed
+
+    async def handle(raw) -> dict:
+        try:
+            if log_raw is not None:
+                log_raw(_trim_raw(dict(raw)))
+            options = [str(o.get("value")) for o in (raw.get("options") or []) if isinstance(o, dict)]
+            try:
+                req = permission_request_from_wire(raw)
+            except Exception as e:  # not parseable by this SDK version: lenient path below
+                rec.setdefault("sdk_parse_fallbacks", []).append(f"{type(e).__name__}: {str(e)[:200]}")
+                req = None
+            if req is not None:
+                resp = typed_handler(req)
+                out = {"selectedOption": resp.selected_option.value}
+                if resp.comment:
+                    out["comment"] = resp.comment
+                return out
+            verdicts = []
+            for tu in raw.get("toolUses") or []:
+                d = tu.get("details") or {}
+                typ = str(d.get("type") or tu.get("confirmationType") or "")
+                tool = (tu.get("toolUse") or {}).get("name")
+                if typ in ("edit", "apply_patch"):
+                    files = [f for f in (d.get("files") or []) if isinstance(f, dict)]
+                    paths = [f.get("filePath") for f in files] or [d.get("filePath")]
+                    ops_ok = all(f.get("operation", "update") == "update" and not f.get("moveTo") for f in files)
+                    verdicts.append((ops_ok and all(ok_path(x) for x in paths), f"{typ} {', '.join(map(str, paths))} (via {tool})"))
+                else:
+                    verdicts.append((False, f"{typ or 'unknown'} (via {tool})"))
+            if verdicts and all(v for v, _ in verdicts) and "proceed_once" in options:
+                rec.setdefault("allowed_actions", []).extend(d for _, d in verdicts)
+                return {"selectedOption": "proceed_once"}
+            rec.setdefault("denied_actions", []).extend([d for v, d in verdicts if not v] or ["(no recognised action)"])
+            return {"selectedOption": "cancel",
+                    "comment": "Refused by SiliconBreak X: only edits to the allowlisted RTL files are permitted."}
+        except Exception as e:  # never approve on an internal error
+            rec.setdefault("permission_errors", []).append(f"{type(e).__name__}: {e}")
+            return {"selectedOption": "cancel"}
+
+    return handle
+
+
 async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCallback, timeout_s: float = 600,
                             settings: Settings | None = None) -> dict:
     s = settings or get_settings()
@@ -252,6 +331,7 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
     on_permission = make_permission_handler(ws, case.editable, rec)
 
     config = SessionConfig(autonomy=Autonomy.OFF, auto_reject_permission_requests=False,
+                           disabled_tools=DROID_DISABLED_TOOLS,
                            system_prompt={"type": "preset", "preset": "droid", "append": DROID_SYSTEM_APPEND})
     runtime = Runtime(executable=s.droid_bin)
     prompt = (f"Read {TASK_FILE} in the current directory and repair the security defect it describes by editing "
@@ -260,9 +340,14 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
     t0 = time.monotonic()
     rec["status"] = "running"
     try:
-        async with Session(cwd=str(root), model=s.droid_model, config=config,
-                           interactions=InteractionHandlers(on_permission=on_permission), runtime=runtime,
-                           api_key=s.factory_api_key) as session:
+        raw_requests: list = []
+        session = Session(cwd=str(root), model=s.droid_model, config=config,
+                          interactions=InteractionHandlers(on_permission=on_permission), runtime=runtime,
+                          api_key=s.factory_api_key)
+        # bound when the session opens: replace the SDK dispatcher's wire handler first (see make_raw_permission_handler)
+        session._dispatcher.handle_permission = make_raw_permission_handler(  # noqa: SLF001 - pinned droid-sdk 0.5.0
+            ws, case.editable, rec, on_permission, raw_requests.append)
+        async with session:
             rec["session_id"] = session.id
             async with session.stream(prompt, timeout=timeout_s) as stream:
                 with open(trace_path, "w") as trace:
@@ -276,6 +361,8 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
                             item.update(name=ev.tool_name, is_error=ev.is_error, content=str(ev.content)[:600])
                         elif isinstance(ev, ErrorEvent):
                             item.update(message=ev.message, error_type=str(ev.error_type))
+                            if "interaction handler failed" in ev.message:
+                                rec.setdefault("permission_errors", []).append(ev.message)
                         trace.write(json.dumps(item, default=str) + "\n")
                         await on_event("droid", item)
                 result = stream.result
@@ -288,6 +375,9 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
                                                                     "cache_read_tokens", "factory_credits")}
             if getattr(result, "success", False):
                 rec["status"] = "completed"
+                if rec.get("permission_errors"):
+                    rec["reason"] = ("an edit request could not be processed by the SDK and was cancelled "
+                                     f"({len(rec['permission_errors'])}x)")
             else:
                 rec["status"] = "failed"
                 rec["reason"] = f"droid run ended with {getattr(result, 'subtype', '?')}: {getattr(result, 'error', '') or ''}"
@@ -298,6 +388,10 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
         rec.update(status="error", reason=f"{type(e).__name__}: {e}")
     rec["duration_s"] = round(time.monotonic() - t0, 2)
     rec["trace"] = trace_path.name if trace_path.is_file() else None
+    try:
+        rec["permission_requests"] = raw_requests[:10]
+    except NameError:
+        pass
     budget.settle_droid(ledger_id, ok=rec["status"] == "completed", usage=rec.get("usage"), model=rec.get("model"))
     return rec
 
