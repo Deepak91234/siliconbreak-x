@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: rising-edge detector.
+// SiliconBreak X preverified library: rising-edge detector.
 // 'pulse' is high for exactly one cycle after 'd' goes from 0 to 1.
 // d must already be synchronized to clk.
 `default_nettype none

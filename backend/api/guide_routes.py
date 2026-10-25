@@ -72,7 +72,7 @@ async def get_guide(revision_id: str) -> dict:
     report = _report(rev)
     guide = build_guide(spec, (report or {}).get("plan"), report)
     guide.update({"revision_id": revision_id, "revision_number": rev["number"], "preview": False,
-                  "programmed_by_circuitloop": rev["status"] in ("programmed", "verified", "verify_failed"),
+                  "programmed_by_siliconbreak": rev["status"] in ("programmed", "verified", "verify_failed"),
                   "sim_status": rev.get("sim_status"), "build_status": rev.get("build_status")})
     return guide
 

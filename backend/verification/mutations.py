@@ -2,7 +2,7 @@
 
 Each mutation is a small, deterministic text edit of either the behaviour core
 (`cl_core.v`, target "core") or the trusted board wrapper (`basys3_top.v`, target
-"wrapper"). They are written against the shapes produced by the CircuitLoop
+"wrapper"). They are written against the shapes produced by the SiliconBreak X
 generators; `apply_mutation` raises ValueError when the edit does not apply to the
 given Verilog (pattern not found or no change), so callers can skip it.
 

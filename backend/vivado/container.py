@@ -15,12 +15,12 @@ Facts established by inspecting ~/cse100/cse100-vivado-on-silicon-mac-main/scrip
 
 Policy implemented here:
   * If `vivado_container` is running it is reused as-is (docker exec only).
-    CircuitLoop never restarts, stops or reconfigures it.
-  * If no suitable container is running, CircuitLoop can -- only after explicit
+    SiliconBreak X never restarts, stops or reconfigures it.
+  * If no suitable container is running, SiliconBreak X can -- only after explicit
     user approval -- start a separate *headless* container
-    (`circuitloop_vivado`) from the same image with the same bind mount and no
-    VNC/XVC. It is labelled `circuitloop.managed=true`; only containers with
-    that label are ever stopped by CircuitLoop.
+    (`siliconbreak_vivado`) from the same image with the same bind mount and no
+    VNC/XVC. It is labelled `siliconbreak.managed=true`; only containers with
+    that label are ever stopped by SiliconBreak X.
   * The launcher script itself is never executed (it would open Screen Sharing,
     start xvcd and take over the container lifecycle).
 """
@@ -38,7 +38,9 @@ from pathlib import Path
 from backend.core.config import Settings, get_settings
 from backend.core.process import run_command
 
-MANAGED_LABEL = "circuitloop.managed"
+MANAGED_LABEL = "siliconbreak.managed"
+# Containers started before the rename carry the earlier label; they still count as ours.
+LEGACY_MANAGED_LABELS = ("circuitloop.managed",)
 _VERSION_RE = re.compile(r"^\d{4}\.\d$")
 
 
@@ -49,7 +51,7 @@ class ContainerInfo:
     running: bool = False
     status: str | None = None
     image: str | None = None
-    managed_by_circuitloop: bool = False
+    managed_by_siliconbreak: bool = False
     home_mount_source: str | None = None
     install_mount_source: str | None = None   # isolated layout: <home>/Xilinx mount
     install_mount_rw: bool | None = None
@@ -114,7 +116,7 @@ async def _inspect(name: str, s: Settings) -> ContainerInfo:
     info.started_at = state.get("StartedAt")
     info.image = data.get("Config", {}).get("Image")
     labels = data.get("Config", {}).get("Labels") or {}
-    info.managed_by_circuitloop = labels.get(MANAGED_LABEL) == "true"
+    info.managed_by_siliconbreak = any(labels.get(k) == "true" for k in (MANAGED_LABEL, *LEGACY_MANAGED_LABELS))
     for m in data.get("Mounts", []):
         if m.get("Destination") == s.vivado_container_home:
             info.home_mount_source = m.get("Source")
@@ -128,7 +130,7 @@ async def container_exec(
     container: str, script: str, *, user: str = "user", workdir: str | None = None,
     timeout_s: float = 60, on_line=None, cancel=None, settings: Settings | None = None,
 ):
-    """Run a fixed, CircuitLoop-authored bash snippet inside the container.
+    """Run a fixed, SiliconBreak X-authored bash snippet inside the container.
 
     `script` must be built only from validated constants (paths we created,
     version strings matching _VERSION_RE, build ids matching a strict regex).
@@ -275,7 +277,7 @@ async def start_docker_desktop() -> dict:
 
 
 async def start_headless(settings: Settings | None = None) -> dict:
-    """Start the CircuitLoop-managed headless container. Approval-gated by caller.
+    """Start the SiliconBreak X-managed headless container. Approval-gated by caller.
 
     Same image and bind mount as start_container.sh, but: no VNC port, no
     Screen Sharing, no xvcd, no GUI -- the container just idles so batch Vivado
@@ -326,12 +328,12 @@ async def start_headless(settings: Settings | None = None) -> dict:
 
 
 async def stop_headless(settings: Settings | None = None) -> dict:
-    """Stop the headless container -- only if CircuitLoop started it (label check)."""
+    """Stop the headless container -- only if SiliconBreak X started it (label check)."""
     s = settings or get_settings()
     info = await _inspect(s.vivado_headless_container, s)
     if not info.exists or not info.running:
         return {"ok": True, "message": "headless container is not running"}
-    if not info.managed_by_circuitloop:
-        return {"ok": False, "message": f"{info.name} was not started by CircuitLoop; refusing to stop it"}
+    if not info.managed_by_siliconbreak:
+        return {"ok": False, "message": f"{info.name} was not started by SiliconBreak X; refusing to stop it"}
     r = await _docker(["stop", "-t", "10", info.name], timeout_s=60, settings=s)
     return {"ok": r.ok, "message": r.text.strip() or r.error}

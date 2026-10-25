@@ -197,8 +197,8 @@ function Composer({ projectId, disabled }: { projectId: string | null; disabled:
       setText(t);
       ref.current?.focus();
     };
-    window.addEventListener("circuitloop:fill-composer", onFill);
-    return () => window.removeEventListener("circuitloop:fill-composer", onFill);
+    window.addEventListener("siliconbreak:fill-composer", onFill);
+    return () => window.removeEventListener("siliconbreak:fill-composer", onFill);
   }, []);
 
   const send = async () => {

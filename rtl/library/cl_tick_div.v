@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: programmable clock-enable generator.
+// SiliconBreak X preverified library: programmable clock-enable generator.
 // Emits a one-cycle 'tick' every 'period' enabled clock cycles (period >= 1).
 // The period may change at run time; if the running count already exceeds the
 // new period the next tick fires immediately. 'clear' restarts the interval.

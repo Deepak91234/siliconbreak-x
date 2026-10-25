@@ -297,7 +297,7 @@ async def _interpret_llm(text: str, current: DesignSpec | None, provider: LLMPro
         if kind in ("question", "unsupported", "clarify"):
             reasons = list(d.unsupported_reasons)
             if kind == "unsupported" and not reasons:
-                reasons = [d.message] if d.message else ["the request is outside what CircuitLoop can build"]
+                reasons = [d.message] if d.message else ["the request is outside what SiliconBreak X can build"]
             return IntentResult(kind=kind, spec=None, message=d.message, assumptions=list(d.assumptions),
                                 unsupported_reasons=reasons, interpreter=interpreter)
         if kind == "modify" and current is None:

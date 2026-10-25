@@ -111,7 +111,7 @@ async def run_simulation_suite(
     fail_fast: bool = False,
     waveforms: bool = True,
 ) -> SimulationReport:
-    """Lint, build and simulate `rtl_files` (+ the CircuitLoop library) against the spec's test plan.
+    """Lint, build and simulate `rtl_files` (+ the SiliconBreak X library) against the spec's test plan.
 
     fail_fast stops after the first scenario with a failing check (used by mutation tests);
     waveforms=False skips VCD tracing (faster builds).

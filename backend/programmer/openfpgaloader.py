@@ -3,7 +3,7 @@
     detect:   openFPGALoader -b basys3 --detect
     program:  openFPGALoader -b basys3 --write-sram <file.bit>     (volatile SRAM only)
 
-`--write-flash` / `-f` is never used: CircuitLoop only performs volatile
+`--write-flash` / `-f` is never used: SiliconBreak X only performs volatile
 configuration, so power-cycling the board restores whatever was in flash.
 
 Success requires exit status 0 AND no error markers in the output; the board is

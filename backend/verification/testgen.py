@@ -84,7 +84,7 @@ class TestPlan(BaseModel):
 
 
 class TestPlanError(ValueError):
-    """The spec cannot be turned into a consistent test plan (a CircuitLoop bug or unsupported spec)."""
+    """The spec cannot be turned into a consistent test plan (a SiliconBreak X bug or unsupported spec)."""
 
     __test__ = False  # not a pytest test class
 

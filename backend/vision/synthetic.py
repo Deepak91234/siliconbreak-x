@@ -25,7 +25,7 @@ import numpy as np
 
 from .frames import encode_jpeg
 
-SYNTHETIC_MARKER = b"CircuitLoop synthetic test frame"
+SYNTHETIC_MARKER = b"SiliconBreak X synthetic test frame"
 
 StateFn = Callable[[float], Mapping[int, int]]   # t (seconds) -> {led_index: 0/1}
 

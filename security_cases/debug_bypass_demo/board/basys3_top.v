@@ -1,5 +1,5 @@
 // TRUSTED Basys 3 wrapper for the debug_bypass_demo case (SiliconBreak X).
-// Hand-written; the port list matches CircuitLoop's generated wrappers, so the
+// Hand-written; the port list matches SiliconBreak X's generated wrappers, so the
 // pins come from boards/basys3/board.json through the standard XDC generator.
 //
 //   BTNU  read_req (hold)          SW1  authorized (simulated permission input)

@@ -205,7 +205,7 @@ export interface FpgaVariantState {
   observations?: BoardObservation[];
 }
 
-/** What CircuitLoop last wrote to the board; camera evidence is only attributed to a confirmed variant. */
+/** What SiliconBreak X last wrote to the board; camera evidence is only attributed to a confirmed variant. */
 export interface Provenance {
   confirmed: boolean; reason?: string; approval_id?: string; at?: number;
   bitstream_sha256?: string | null; audit_id?: string | null; variant?: string | null;

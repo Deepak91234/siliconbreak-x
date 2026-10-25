@@ -1,4 +1,4 @@
-"""The CircuitLoop autonomous engineering loop.
+"""The SiliconBreak X autonomous engineering loop.
 
 One Run = one user request (new design, modification, rebuild or reprogram)
 driven through the fixed stage list in backend/core/events.STAGES:
@@ -35,7 +35,7 @@ from backend.specifications.ir import DesignSpec
 from backend.storage import store
 from backend.storage.db import now
 
-log = logging.getLogger("circuitloop.orchestrator")
+log = logging.getLogger("siliconbreak.orchestrator")
 
 VIVADO_STAGE_MAP = {"read": "synth", "synth": "synth", "opt": "impl", "place": "impl", "route": "impl",
                     "reports": "timing", "bitstream": "bitstream"}
@@ -754,16 +754,16 @@ class Orchestrator:
         """Store a camera verdict for a revision and fold it into that revision's latest run.
 
         The camera cannot know which bitstream is on the board, so the verdict only
-        upgrades a run to 'passed'/'failed' when CircuitLoop itself confirmed
+        upgrades a run to 'passed'/'failed' when SiliconBreak X itself confirmed
         programming this revision. Otherwise it is stored with
-        programmed_by_circuitloop=False and the run status is left unchanged.
+        programmed_by_siliconbreak=False and the run status is left unchanged.
         """
         rev = store.get_revision(revision_id)
         if rev is None:
             return result
         status = result.get("status")
         confirmed = rev["status"] in ("programmed", "verified", "verify_failed")
-        result = {**result, "programmed_by_circuitloop": confirmed}
+        result = {**result, "programmed_by_siliconbreak": confirmed}
         new_status = {"passed": "verified", "failed": "verify_failed"}.get(status) if confirmed else None
         rev = store.update_revision(revision_id, verification=result, **({"status": new_status} if new_status else {}))
         run = store.latest_run_for_revision(revision_id)
@@ -772,7 +772,7 @@ class Orchestrator:
         ctx = RunContext(run["id"], run["project_id"], run.get("options") or {})
         summary = result.get("summary", "")
         if not confirmed:
-            summary = "board programming not confirmed by CircuitLoop for this revision; " + summary
+            summary = "board programming not confirmed by SiliconBreak X for this revision; " + summary
         await ctx.stage("verify", {"passed": "passed", "failed": "failed", "inconclusive": "inconclusive"}.get(status, "unavailable"),
                         summary[:200], {"result": result})
         await bus.emit("revision.updated", run_id=run["id"], project_id=run["project_id"], revision=store.revision_summary(rev))
@@ -782,7 +782,7 @@ class Orchestrator:
         reqs = result.get("requirements", [])
         observed = [r["id"] for r in reqs if r.get("physical_status") == "observed_pass"]
         sim_only = [r["id"] for r in reqs if r.get("physical_status") in ("not_observable", "not_observed")]
-        caveat = "" if confirmed else ("\nNote: CircuitLoop did not program this revision, so the camera result is not "
+        caveat = "" if confirmed else ("\nNote: SiliconBreak X did not program this revision, so the camera result is not "
                                        "attributed to it (the board may hold a different design).")
         await ctx.say(f"Physical verification: {status}. {result.get('summary', '')}\n"
                       f"Physically observed: {', '.join(observed) or 'none'}. "

@@ -1,7 +1,7 @@
 # SiliconBreak X
 
 Hardware-security investigation, repair and verification, built as an additive
-extension of CircuitLoop. One rule governs everything: **an AI description of a
+layer on top of its AI FPGA engineering flow. One rule governs everything: **an AI description of a
 bug is a suspicion; only the trusted verifier's result is evidence.**
 
 ## Pipeline
@@ -9,7 +9,7 @@ bug is a suspicion; only the trusted verifier's result is evidence.**
 ```text
 Security Lab / POST /api/security/audits
         │
-        ▼  (a CircuitLoop run with these stages; events over /ws/events)
+        ▼  (a SiliconBreak X run with these stages; events over /ws/events)
 contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retest ─ evidence
               │          │            │         │        │        │
               │   Bitdeer / Claude    │   Yosys SAT   isolated   same verifier
@@ -64,7 +64,7 @@ contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retes
 * **Index:** modules, packages, includes, approximate instantiations and a keyword-based security-relevance score, which only
   orders files for review.
 * **Audit:** `POST /api/security/audits {repo_id, files?}` (explicit files, or the highest-scoring files within the context budget,
-  at most 12), or `{project_id, revision_id?}` for the current CircuitLoop design's generated RTL. These audits use a **generic**
+  at most 12), or `{project_id, revision_id?}` for the current SiliconBreak X design's generated RTL. These audits use a **generic**
   hardware-security contract (G-ACCESS, G-DEBUG, G-LOCK, G-ZEROIZE, G-RESET, G-FSM). With no trusted tests, reproduction,
   formal checks and repairs are recorded as *not run*, every finding stays **suspected**, and the outcome is `suspected_only`
   or `no_findings` ("not a proof of security"). Findings link to the exact lines at the pinned commit. The UI and the report
@@ -77,8 +77,8 @@ BTNC reset; LED7–LED0 data, LED15 granted, LED14 denied) and a demo sequence w
 `POST /api/security/audits/{id}/fpga/{variant}/build` (variant `vulnerable`, or `attempt-N` for a verifier-accepted patch whose bytes
 still match the verified hashes) runs:
 
-1. **Board-level simulation.** The full Basys 3 top (wrapper, CircuitLoop library and the variant's RTL) runs the demo sequence
-   in CircuitLoop's generic Verilator harness, with debounce shortened by parameter. Each step's simulated LEDs are compared
+1. **Board-level simulation.** The full Basys 3 top (wrapper, SiliconBreak X library and the variant's RTL) runs the demo sequence
+   in SiliconBreak X's generic Verilator harness, with debounce shortened by parameter. Each step's simulated LEDs are compared
    with what the contract requires. Vulnerable: D1 (unauthorized debug read) shows `0x80A5`, i.e. granted plus the secret, where
    `0x4000` (denied) is required. Reference fix: all four steps match. This is simulation, never a hardware observation.
 2. **Vivado.** Synthesis, implementation, timing and bitstream through the existing batch flow in your container, with pins from
@@ -95,7 +95,7 @@ only recorded through webcam evidence (next section); otherwise it is your own o
 next to the contract and the board-level simulation (`backend/security/board_vision.py`, UI `frontend/src/security/BoardCamera.tsx`).
 
 - **Attribution.** A camera cannot tell which bitstream is loaded, so a session can only be opened for the variant whose
-  bitstream CircuitLoop programmed last: the most recent executed `program_fpga` approval (security or regular flow) must name
+  bitstream SiliconBreak X programmed last: the most recent executed `program_fpga` approval (security or regular flow) must name
   this audit, this variant and this build's SHA-256. Otherwise the request is refused (409) with the reason. A power cycle since
   programming is not detectable here; it shows up as a mismatch with the simulation (verdict *unexpected*).
 - **Steps.** A dark reference (no button held, every LED off; the controller clears its outputs when `read_req` drops), then
@@ -121,7 +121,7 @@ for the webcam. Not yet run with the real webcam on the real board.
 ## AI credit protection
 
 Sponsor credits: Claude $50, Bitdeer $50, Factory Pro (one month; a $20 voucher is not assumed). Every paid call goes
-through `backend/core/budget.py`, including CircuitLoop's own design agent:
+through `backend/core/budget.py`, including SiliconBreak X's own design agent:
 
 * **Live AI is off until you turn it on** (Security Lab or SiliconBench → *AI credits* → *Turn on live AI*, which
   shows the caps and asks for confirmation). While off, keys may be present but no request is sent: investigations
@@ -144,7 +144,7 @@ through `backend/core/budget.py`, including CircuitLoop's own design agent:
   about $2.02 plus 6 Droid sessions.
 * **Tests never spend:** an autouse fixture hides the keys, keeps live AI off and gives each test a throwaway data
   folder; billed tests would need the `live_ai` marker and `--run-live-ai`.
-* Ledger: table `ai_usage` in the CircuitLoop database; `GET /api/ai/budget`, `POST /api/ai/live {enabled}`,
+* Ledger: table `ai_usage` in the SiliconBreak X database; `GET /api/ai/budget`, `POST /api/ai/live {enabled}`,
   `POST /api/bench/estimate`.
 
 Settings (`.env`): `SILICONBREAK_LIVE_AI`, `SILICONBREAK_BUDGET_ANTHROPIC_USD`, `SILICONBREAK_BUDGET_BITDEER_USD`,
@@ -197,9 +197,9 @@ container that never sees the coursework:
 
 It runs with `--network none`, no ports, `--memory 2560m --memory-swap 2560m --oom-score-adj 1000 --cpus 3`, `--rm`.
 `vivado_container`, the coursework folders, `.Xilinx` settings and the launcher are never mounted, stopped or changed.
-CircuitLoop is pointed at it through `.env` (`CIRCUITLOOP_VIVADO_CONTAINER`, `CIRCUITLOOP_VIVADO_HOST_ROOT`,
-`CIRCUITLOOP_VIVADO_INSTALL_DIR`, `CIRCUITLOOP_VIVADO_WORKSPACE_SUBDIR=ws`, `CIRCUITLOOP_VIVADO_MAX_THREADS=2`). With
-`CIRCUITLOOP_VIVADO_INSTALL_DIR` set, CircuitLoop refuses any container whose install mount is not read-only or whose
+SiliconBreak X is pointed at it through `.env` (`SILICONBREAK_VIVADO_CONTAINER`, `SILICONBREAK_VIVADO_HOST_ROOT`,
+`SILICONBREAK_VIVADO_INSTALL_DIR`, `SILICONBREAK_VIVADO_WORKSPACE_SUBDIR=ws`, `SILICONBREAK_VIVADO_MAX_THREADS=2`). With
+`SILICONBREAK_VIVADO_INSTALL_DIR` set, SiliconBreak X refuses any container whose install mount is not read-only or whose
 home mount is not the dedicated folder, and its own "start headless container" button creates exactly this container.
 Verified inside the container: the install is mounted `ro` (writes fail), only `ws`/`Xilinx` are visible, no network.
 
@@ -211,8 +211,8 @@ Verified inside the container: the install is mounted `ro` (writes fail), only `
 | after: human reference fix | all 4 steps match | WNS +5.119 ns, WHS +0.131 ns | 53 / 128 | `47e01531540653dfa21294d4654cc57f9fd7469de677e9dd891e82a83790bf43` |
 
 Both 2,192,118 bytes, Vivado 2023.2 in `siliconbreak_vivado` (224 s and 333 s). Nothing under `~/cse100` changed during the
-builds; the only file activity there came from an older CircuitLoop backend still running with the previous
-configuration (transient `.probe` tokens in `circuitloop_ws/`), which a restart of `./scripts/dev.sh` ends. The board has
+builds; the only file activity there came from an older SiliconBreak X backend still running with the previous
+configuration (transient `.probe` tokens in `siliconbreak_ws/`), which a restart of `./scripts/dev.sh` ends. The board has
 not been programmed.
 
 ## Status ladders
@@ -254,7 +254,7 @@ GET  /api/security/audits/{id}/waveform?path=&start=&end=&signals=
 POST /api/security/audits                {repo_id, files?} | {project_id, revision_id?}
 POST /api/security/repos                 {url, ref?, subdir?}
 GET  /api/security/repos, /api/security/repos/{id}, /api/security/repos/{id}/file?path=
-GET  /api/security/audits/{id}/fpga                 variants, demo steps, state, provenance (what CircuitLoop last programmed)
+GET  /api/security/audits/{id}/fpga                 variants, demo steps, state, provenance (what SiliconBreak X last programmed)
 POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/build
 POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/program
 POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/camera   webcam session (409 unless that variant is loaded)

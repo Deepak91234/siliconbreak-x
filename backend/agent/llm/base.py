@@ -1,6 +1,6 @@
-"""Provider-neutral LLM interface used by the CircuitLoop agent.
+"""Provider-neutral LLM interface used by the SiliconBreak X agent.
 
-Every LLM call in CircuitLoop asks for *structured* output: the caller names a
+Every LLM call in SiliconBreak X asks for *structured* output: the caller names a
 pydantic model and receives a validated instance (or an `LLMError`). Free-form
 text never flows into the pipeline, so intent parsing, RTL generation and
 repair all go through the same narrow `structured()` entry point. That keeps

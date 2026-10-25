@@ -25,7 +25,7 @@ DEMO2 = "Change the counter so it counts backward, and use BTNC to reset it."
 
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # force the honest offline path
     from backend.core import config
     from backend.storage import store

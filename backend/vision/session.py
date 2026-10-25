@@ -160,7 +160,7 @@ def build_plan(spec: DesignSpec, observations: list[Observation]) -> list[PhaseP
     cal_text = ("Point the camera at the LEDs and keep it still. Flip the source inputs on and off a couple of "
                 "times so every LED is seen lit and unlit." if static else
                 "Point the camera at the LEDs and keep it still. Let the design run without touching the board "
-                "so CircuitLoop can learn what lit and unlit LEDs look like.")
+                "so SiliconBreak X can learn what lit and unlit LEDs look like.")
     plan = [PhasePlan(id=CALIBRATE_PHASE, observation_id=None, title="Calibrate LED detection",
                       instruction=cal_text + f" At least {CALIBRATE_MIN_S:g} s.", min_duration_s=CALIBRATE_MIN_S)]
     modes = [m.name for m in getattr(b, "rate_modes", []) or []]

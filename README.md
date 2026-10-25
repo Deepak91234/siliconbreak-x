@@ -1,6 +1,6 @@
-# CircuitLoop — autonomous AI FPGA engineer for the Basys 3
+# SiliconBreak X — autonomous AI FPGA engineer for the Basys 3
 
-CircuitLoop turns a natural-language circuit description into a verified
+SiliconBreak X turns a natural-language circuit description into a verified
 Digilent Basys 3 design. It writes the specification, generates Verilog, writes
 independent tests, simulates with Verilator, repairs failures (at most 3
 automatic attempts), builds with Vivado in your existing Docker installation,
@@ -25,7 +25,7 @@ boundary, API, demo script and what still needs keys or hardware.
 ## Quick start
 
 ```bash
-cd ~/Desktop/CircuitLoop
+cd siliconbreak-x   # your clone of this repository
 /opt/homebrew/bin/python3.12 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env            # add ANTHROPIC_API_KEY for the LLM agent (optional)
@@ -39,22 +39,22 @@ be running for Vivado builds.
 
 ### Vivado
 
-CircuitLoop uses your existing **cse100-vivado-on-silicon-mac** installation
+SiliconBreak X uses your existing **cse100-vivado-on-silicon-mac** installation
 (`~/cse100/cse100-vivado-on-silicon-mac-main`). It never installs a second
 Vivado and never changes your Docker configuration.
 
 * If `vivado_container` is running (started by your usual
-  `scripts/start_container.sh`), CircuitLoop reuses it. It only runs
+  `scripts/start_container.sh`), SiliconBreak X reuses it. It only runs
   `docker exec … vivado -mode batch`, and your GUI session keeps running.
 * If no container is running, the dashboard offers to start a separate
-  **headless** container, `circuitloop_vivado`. It uses the same image
+  **headless** container, `siliconbreak_vivado`. It uses the same image
   (`x64-linux`) and the same bind mount, but no VNC, no Screen Sharing and no
-  xvcd. It starts only after you approve it, and CircuitLoop only stops
-  containers labelled `circuitloop.managed=true`.
-* Builds run in `~/cse100/cse100-vivado-on-silicon-mac-main/circuitloop_ws/builds/<id>`,
-  which the container sees as `/home/user/circuitloop_ws/…`. Results are copied
+  xvcd. It starts only after you approve it, and SiliconBreak X only stops
+  containers labelled `siliconbreak.managed=true`.
+* Builds run in `~/cse100/cse100-vivado-on-silicon-mac-main/siliconbreak_ws/builds/<id>`,
+  which the container sees as `/home/user/siliconbreak_ws/…`. Results are copied
   into `runs/projects/<project>/<revision>/vivado/`.
-* Only one CircuitLoop build runs at a time, enforced by a process lock plus a
+* Only one SiliconBreak X build runs at a time, enforced by a process lock plus a
   file lock in the shared workspace.
 
 You can still start the Vivado GUI the usual way:
@@ -67,7 +67,7 @@ You can still start the Vivado GUI the usual way:
 
 `start_container.sh` runs the macOS `xvcd` USB bridge in a loop while the GUI
 container is up. `xvcd` holds the Basys 3's FTDI JTAG interface, so
-openFPGALoader cannot open the board while it runs. CircuitLoop detects this
+openFPGALoader cannot open the board while it runs. SiliconBreak X detects this
 and picks an adapter:
 
 * **openFPGALoader** (`openFPGALoader -b basys3 design.bit`, volatile SRAM
@@ -76,7 +76,7 @@ and picks an adapter:
   programs through the existing XVC bridge without disrupting it.
 
 Programming always needs an explicit approval in the dashboard. The approval
-is bound to the SHA-256 of the exact bitstream. CircuitLoop never writes the
+is bound to the SHA-256 of the exact bitstream. SiliconBreak X never writes the
 configuration flash.
 
 ## Layout

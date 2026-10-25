@@ -162,7 +162,7 @@ def test_steps_require_framing_and_known_ids(tmp_path):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     from backend.core import config
     from backend.storage import store
 

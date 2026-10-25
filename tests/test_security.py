@@ -309,7 +309,7 @@ async def test_bitdeer_errors_are_classified_and_scrubbed(status, kind):
 
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     for k in ("ANTHROPIC_API_KEY", "BITDEER_API_KEY", "FACTORY_API_KEY"):
         monkeypatch.setenv(k, "")
     monkeypatch.setenv("SILICONBREAK_DROID", "/nonexistent/droid")
@@ -484,7 +484,7 @@ def test_repo_scoring_and_budgeted_selection():
 
 @pytest.mark.network
 async def test_import_opentitan_rv_dm_at_pinned_commit(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     from backend.core import config
     config.get_settings.cache_clear()
     from backend.security import repo_index as ri

@@ -219,7 +219,7 @@ function SimResult({ revisionId }: { revisionId: string }) {
 
 function VerifyResult({ revisionId }: { revisionId: string }) {
   const res = useResource(revisionId, 0, (sig) => api.revision(revisionId, sig));
-  const v = res.data?.verification as { status?: string; summary?: string; programmed_by_circuitloop?: boolean } | null | undefined;
+  const v = res.data?.verification as { status?: string; summary?: string; programmed_by_siliconbreak?: boolean } | null | undefined;
   return (
     <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
       <div className="text-2xs uppercase tracking-wide text-faint">Physical verification (webcam)</div>
@@ -227,7 +227,7 @@ function VerifyResult({ revisionId }: { revisionId: string }) {
         <>
           <Pill tone={verdict(v.status).tone} className="mt-1">{verdict(v.status).label}</Pill>
           <p className="mt-1 text-sm text-muted">{v.summary}</p>
-          {v.programmed_by_circuitloop === false && <p className="mt-1 text-xs text-warn">CircuitLoop did not program this revision; the result is not attributed to it.</p>}
+          {v.programmed_by_siliconbreak === false && <p className="mt-1 text-xs text-warn">SiliconBreak X did not program this revision; the result is not attributed to it.</p>}
         </>
       ) : <p className="mt-1 text-sm text-muted">Not physically verified yet.</p>}
     </section>

@@ -420,7 +420,7 @@ export function VisionTab({ revisionId }: { revisionId: string | null }) {
           </div>
           {camera.status !== "live" && !camera.error && (
             <Empty title={camera.status === "requesting" ? "Waiting for camera permission…" : "Camera off"}>
-              Point a webcam at the Basys 3 so the LED row is clearly visible, then press Enable camera. Frames are sent only to the local CircuitLoop backend.
+              Point a webcam at the Basys 3 so the LED row is clearly visible, then press Enable camera. Frames are sent only to the local SiliconBreak X backend.
             </Empty>
           )}
           {camera.status === "live" && (

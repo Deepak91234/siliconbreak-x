@@ -1,4 +1,4 @@
-"""CircuitLoop configuration.
+"""SiliconBreak X configuration.
 
 Values come from the process environment, falling back to a `.env` file in the
 repository root (never committed; see .env.example). Secrets such as
@@ -56,7 +56,7 @@ class Settings:
     # Vivado / Docker (existing cse100-vivado-on-silicon-mac installation)
     docker_bin: str | None
     vivado_container: str            # the user's GUI container started by start_container.sh
-    vivado_headless_container: str   # optional headless container CircuitLoop may start (with approval)
+    vivado_headless_container: str   # optional headless container SiliconBreak X may start (with approval)
     vivado_image: str
     vivado_host_root: Path           # host directory bind-mounted at vivado_container_home
     vivado_container_home: str
@@ -85,7 +85,7 @@ class Settings:
 
     # Isolated Vivado container (optional). When set, the Vivado install is a separate,
     # read-only mount at <container home>/Xilinx, and vivado_host_root is a dedicated
-    # writable folder instead of the user's Vivado home. CircuitLoop then refuses any
+    # writable folder instead of the user's Vivado home. SiliconBreak X then refuses any
     # container that does not mount the install read-only.
     vivado_install_dir: Path | None = None
     vivado_memory: str = "2560m"
@@ -159,36 +159,36 @@ def get_settings() -> Settings:
         v = env.get(key)
         return v if v not in (None, "") else default
 
-    runs_dir = Path(get("CIRCUITLOOP_RUNS_DIR", str(REPO_ROOT / "runs"))).expanduser()
-    vivado_root = Path(get("CIRCUITLOOP_VIVADO_HOST_ROOT", str(HOME / "cse100" / "cse100-vivado-on-silicon-mac-main"))).expanduser()
+    runs_dir = Path(get("SILICONBREAK_RUNS_DIR", str(REPO_ROOT / "runs"))).expanduser()
+    vivado_root = Path(get("SILICONBREAK_VIVADO_HOST_ROOT", str(HOME / "cse100" / "cse100-vivado-on-silicon-mac-main"))).expanduser()
     return Settings(
         runs_dir=runs_dir,
-        db_path=Path(get("CIRCUITLOOP_DB_PATH", str(runs_dir / "circuitloop.sqlite3"))).expanduser(),
+        db_path=Path(get("SILICONBREAK_DB_PATH", str(runs_dir / "siliconbreak.sqlite3"))).expanduser(),
         docker_bin=_which("docker", "/usr/local/bin", "/opt/homebrew/bin", "/Applications/Docker.app/Contents/Resources/bin"),
-        vivado_container=get("CIRCUITLOOP_VIVADO_CONTAINER", "vivado_container"),
-        vivado_headless_container=get("CIRCUITLOOP_VIVADO_HEADLESS_CONTAINER", "circuitloop_vivado"),
-        vivado_image=get("CIRCUITLOOP_VIVADO_IMAGE", "x64-linux"),
+        vivado_container=get("SILICONBREAK_VIVADO_CONTAINER", "vivado_container"),
+        vivado_headless_container=get("SILICONBREAK_VIVADO_HEADLESS_CONTAINER", "siliconbreak_vivado"),
+        vivado_image=get("SILICONBREAK_VIVADO_IMAGE", "x64-linux"),
         vivado_host_root=vivado_root,
-        vivado_container_home=get("CIRCUITLOOP_VIVADO_CONTAINER_HOME", "/home/user"),
-        vivado_launcher_dir=Path(get("CIRCUITLOOP_VIVADO_LAUNCHER_DIR", str(vivado_root / "scripts"))).expanduser(),
-        vivado_workspace_subdir=get("CIRCUITLOOP_VIVADO_WORKSPACE_SUBDIR", "circuitloop_ws"),
-        vivado_version=env.get("CIRCUITLOOP_VIVADO_VERSION") or None,
-        vivado_build_timeout_s=float(get("CIRCUITLOOP_VIVADO_BUILD_TIMEOUT_S", "2400")),
-        vivado_max_threads=int(get("CIRCUITLOOP_VIVADO_MAX_THREADS", "4")),
-        verilator_bin=env.get("CIRCUITLOOP_VERILATOR") or _which("verilator", "/opt/homebrew/bin", "/usr/local/bin"),
-        openfpgaloader_bin=env.get("CIRCUITLOOP_OPENFPGALOADER")
+        vivado_container_home=get("SILICONBREAK_VIVADO_CONTAINER_HOME", "/home/user"),
+        vivado_launcher_dir=Path(get("SILICONBREAK_VIVADO_LAUNCHER_DIR", str(vivado_root / "scripts"))).expanduser(),
+        vivado_workspace_subdir=get("SILICONBREAK_VIVADO_WORKSPACE_SUBDIR", "siliconbreak_ws"),
+        vivado_version=env.get("SILICONBREAK_VIVADO_VERSION") or None,
+        vivado_build_timeout_s=float(get("SILICONBREAK_VIVADO_BUILD_TIMEOUT_S", "2400")),
+        vivado_max_threads=int(get("SILICONBREAK_VIVADO_MAX_THREADS", "4")),
+        verilator_bin=env.get("SILICONBREAK_VERILATOR") or _which("verilator", "/opt/homebrew/bin", "/usr/local/bin"),
+        openfpgaloader_bin=env.get("SILICONBREAK_OPENFPGALOADER")
         or _which("openFPGALoader", "/opt/homebrew/bin", "/usr/local/bin"),
-        sim_clk_hz=int(get("CIRCUITLOOP_SIM_CLK_HZ", "10000")),
-        llm_provider=get("CIRCUITLOOP_LLM_PROVIDER", "anthropic"),
-        llm_model=get("CIRCUITLOOP_LLM_MODEL", "claude-opus-5-5"),
+        sim_clk_hz=int(get("SILICONBREAK_SIM_CLK_HZ", "10000")),
+        llm_provider=get("SILICONBREAK_LLM_PROVIDER", "anthropic"),
+        llm_model=get("SILICONBREAK_LLM_MODEL", "claude-opus-5-5"),
         anthropic_api_key=env.get("ANTHROPIC_API_KEY") or None,
-        max_repair_attempts=int(get("CIRCUITLOOP_MAX_REPAIR_ATTEMPTS", "3")),
-        host=get("CIRCUITLOOP_HOST", "127.0.0.1"),
-        port=int(get("CIRCUITLOOP_PORT", "8000")),
-        vivado_install_dir=Path(env["CIRCUITLOOP_VIVADO_INSTALL_DIR"]).expanduser()
-        if env.get("CIRCUITLOOP_VIVADO_INSTALL_DIR") else None,
-        vivado_memory=get("CIRCUITLOOP_VIVADO_MEMORY", "2560m"),
-        vivado_cpus=get("CIRCUITLOOP_VIVADO_CPUS", "3"),
+        max_repair_attempts=int(get("SILICONBREAK_MAX_REPAIR_ATTEMPTS", "3")),
+        host=get("SILICONBREAK_HOST", "127.0.0.1"),
+        port=int(get("SILICONBREAK_PORT", "8000")),
+        vivado_install_dir=Path(env["SILICONBREAK_VIVADO_INSTALL_DIR"]).expanduser()
+        if env.get("SILICONBREAK_VIVADO_INSTALL_DIR") else None,
+        vivado_memory=get("SILICONBREAK_VIVADO_MEMORY", "2560m"),
+        vivado_cpus=get("SILICONBREAK_VIVADO_CPUS", "3"),
         bitdeer_api_key=env.get("BITDEER_API_KEY") or None,
         bitdeer_base_url=get("BITDEER_BASE_URL", "https://api-inference.bitdeer.ai/v1").rstrip("/"),
         bitdeer_model=get("BITDEER_MODEL", "zai-org/GLM-5.3"),

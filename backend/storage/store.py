@@ -1,4 +1,4 @@
-"""Typed access to persisted CircuitLoop state, shaped exactly like docs/api.md objects."""
+"""Typed access to persisted SiliconBreak X state, shaped exactly like docs/api.md objects."""
 
 from __future__ import annotations
 

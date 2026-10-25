@@ -1,4 +1,4 @@
-# CircuitLoop non-project Vivado flow (batch mode, no GUI).
+# SiliconBreak X non-project Vivado flow (batch mode, no GUI).
 #
 #   vivado -mode batch -nojournal -notrace -log vivado.log -source build.tcl -tclargs CLBUILD_<id>
 #

@@ -25,7 +25,7 @@ _MSG_RE = re.compile(
     r"(?:(?P<file>[^:\s]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*)?(?P<msg>.*)$"
 )
 
-# Lint codes that CircuitLoop treats as design errors even though Verilator
+# Lint codes that SiliconBreak X treats as design errors even though Verilator
 # reports them as warnings. Anything else is reported but not fatal.
 FATAL_LINT_CODES = {
     "WIDTHTRUNC", "WIDTHEXPAND", "WIDTH", "LATCH", "COMBDLY", "MULTIDRIVEN",
@@ -144,7 +144,7 @@ def parse_messages(lines: list[str]) -> list[LintMessage]:
 
 
 def _check_sources(sources: list[Path], workspace: Path) -> list[Path]:
-    """Sources must be in the workspace or be CircuitLoop's own library files."""
+    """Sources must be in the workspace or be SiliconBreak X's own library files."""
     from backend.rtl.wrapper import LIBRARY_DIR
 
     checked = []

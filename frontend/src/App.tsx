@@ -5,7 +5,7 @@
  *   top bar   page title, System status, approvals, presentation, theme
  *   main      Security Lab (default) · SiliconBench · FPGA Lab · Workspace
  *
- * Workspace holds the CircuitLoop builder (AI Builder, Code with diagram,
+ * Workspace holds the SiliconBreak X builder (AI Builder, Code with diagram,
  * Simulation, Build and History panels); hardware and camera live in the FPGA
  * Lab. All content comes from the store (backend REST + /ws/events); the shell
  * only arranges it.

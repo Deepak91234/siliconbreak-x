@@ -2,9 +2,9 @@ import { defineConfig, type ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
 
 // The FastAPI backend (docs/api.md). Everything the dashboard shows comes from it.
-// CIRCUITLOOP_BACKEND overrides it (e.g. a backend on a private port for testing).
+// SILICONBREAK_BACKEND overrides it (e.g. a backend on a private port for testing).
 const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
-const BACKEND = env.CIRCUITLOOP_BACKEND || "http://127.0.0.1:8000";
+const BACKEND = env.SILICONBREAK_BACKEND || "http://127.0.0.1:8000";
 
 /**
  * When the backend is down Vite's proxy would answer with an empty 500, which is
@@ -20,7 +20,7 @@ function backendDownAs502(proxy: Parameters<NonNullable<ProxyOptions["configure"
     };
     if (r && typeof r.writeHead === "function" && !r.headersSent && !r.writableEnded) {
       r.writeHead(502, { "Content-Type": "application/json" }).end(
-        JSON.stringify({ detail: `CircuitLoop backend not reachable at ${BACKEND} (${err.message})`, backend_down: true }),
+        JSON.stringify({ detail: `SiliconBreak X backend not reachable at ${BACKEND} (${err.message})`, backend_down: true }),
       );
     }
   });

@@ -17,7 +17,7 @@ DEMO2 = "Change the counter so it counts backward, and use BTNC to reset it."
 
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     from backend.core import config
     from backend.storage import store
@@ -74,7 +74,7 @@ async def test_guide_from_spec_and_scenarios(demo2):
     reset = next(s for s in g["steps"] if "BTNC" in s["title"])
     assert reset["scenario_id"] and reset["sim_status"] == "passed"
     assert "0000" in reset["expected"]
-    assert g["programmed_by_circuitloop"] is False and g["preview"] is False
+    assert g["programmed_by_siliconbreak"] is False and g["preview"] is False
 
 
 async def test_example_guide_is_marked_preview(client):

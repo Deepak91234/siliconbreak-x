@@ -29,7 +29,7 @@ TEXT_SUFFIXES = {".v", ".sv", ".vh", ".svh", ".diff", ".log", ".md", ".json", ".
 
 
 class AuditRequest(BaseModel):
-    """Exactly one source: a security case, an imported repository, or a CircuitLoop project."""
+    """Exactly one source: a security case, an imported repository, or a SiliconBreak X project."""
     case_id: Optional[str] = None
     repo_id: Optional[str] = None
     files: Optional[list[str]] = None          # repository audits: explicit file selection

@@ -28,7 +28,7 @@ from backend.specifications.ir import (
     TrafficLightBehavior,
 )
 
-NO_LLM = ("No LLM is configured (set ANTHROPIC_API_KEY to enable the AI interpreter), so CircuitLoop is using "
+NO_LLM = ("No LLM is configured (set ANTHROPIC_API_KEY to enable the AI interpreter), so SiliconBreak X is using "
           "its offline rules")
 OFFLINE_EXAMPLES = ("Examples the offline rules understand: \"Build a 4-bit counter on LEDs 0-3 that counts once "
                     "per second and 3 times per second while I hold BTNU\", \"Blink LED0 at 2 Hz\", \"LEDs 0-7 follow "
@@ -253,7 +253,7 @@ def _refs(clause: str) -> list[_Ref]:
 # =============================================================================== unsupported / question
 
 _UNSUPPORTED = [
-    (r"\bvga\b|\bhdmi\b|\bvideo\b|\bpixels?\b", "Video output (VGA/HDMI) is not supported; CircuitLoop designs drive "
+    (r"\bvga\b|\bhdmi\b|\bvideo\b|\bpixels?\b", "Video output (VGA/HDMI) is not supported; SiliconBreak X designs drive "
      "only the 16 on-board LEDs."),
     (r"\buart\b|\bserial (?:port|link|interface|output|communication)|\brs-?232\b|\bbaud\b|\busb (?:serial|keyboard|"
      r"mouse|device|communication)", "UART/serial/USB communication is not supported."),
@@ -507,7 +507,7 @@ def _parse_clauses(t: str, family: str) -> _Parsed:
                 if not active_runs:
                     raise _Clarify(
                         f"{_signal_text(ref)} would have to stop the design while it is "
-                        f"{'pressed' if ref.is_button else 'up'}; enable inputs in CircuitLoop run the design while "
+                        f"{'pressed' if ref.is_button else 'up'}; enable inputs in SiliconBreak X run the design while "
                         "they are high. Could you use a switch that is up to run instead?")
                 p.enable = ref
             elif hz is not None or mult is not None:
@@ -647,7 +647,7 @@ def _build_blinker(t: str, p: _Parsed) -> dict:
                                 "pattern": "alternate" if alternate else "together"}
     behavior["rate_modes"] = _rate_modes(p, inputs, default_hz, "Hz")
     if p.reset is not None:
-        raise _Clarify("a blinker has no reset input in CircuitLoop; did you mean an enable switch?")
+        raise _Clarify("a blinker has no reset input in SiliconBreak X; did you mean an enable switch?")
     _apply_common_inputs(p, inputs, behavior, "blinker")
     _check_roles(inputs, behavior)
     if inputs.items:
@@ -854,7 +854,7 @@ def _modify(t: str, current: DesignSpec) -> tuple[DesignSpec, list[str]]:
     # reset / enable / request
     if p.reset is not None:
         if family == "blinker":
-            raise _Clarify("a blinker has no reset input in CircuitLoop")
+            raise _Clarify("a blinker has no reset input in SiliconBreak X")
         existing = inputs.by_signal(p.reset)
         b["reset_input"] = inputs.add(p.reset, _role_name(p.reset, "reset"),
                                       "Hold to reset the count to 0" if family == "counter" else "Hold to restart")
@@ -981,7 +981,7 @@ def interpret_offline(text: str, current: DesignSpec | None) -> OfflineResult:
     reasons = _unsupported_reasons(t)
     if reasons:
         return OfflineResult(kind="unsupported", unsupported_reasons=reasons,
-                             message="This request needs hardware or features CircuitLoop cannot build yet.")
+                             message="This request needs hardware or features SiliconBreak X cannot build yet.")
 
     fam = _detect_family(t)
     is_question = (text.strip().endswith("?") or bool(_QUESTION_START.match(t))) and not _DESIGN_VERBS.search(t)
@@ -1027,7 +1027,7 @@ def interpret_offline(text: str, current: DesignSpec | None) -> OfflineResult:
                              message=f"Interpreted with the offline rules (no LLM configured): {spec.summary}")
     except _Unsupported as e:
         return OfflineResult(kind="unsupported", unsupported_reasons=e.reasons,
-                             message="This request is outside what CircuitLoop can build.")
+                             message="This request is outside what SiliconBreak X can build.")
     except _Clarify as e:
         return OfflineResult(kind="clarify", message=f"{NO_LLM}: {e}")
     except ValidationError as e:

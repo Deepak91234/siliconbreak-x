@@ -7,7 +7,7 @@ Given a case manifest and candidate versions of the case's editable files, it:
   2. rejects files outside the case's editable allowlist and runs the host-safety
      scan on every candidate,
   3. records sha256 hashes of the trusted testbench/formal files and the candidates,
-  4. lints the design with Verilator (CircuitLoop's lint policy),
+  4. lints the design with Verilator (SiliconBreak X's lint policy),
   5. builds the trusted testbench + candidates with `verilator --binary --timing`,
   6. runs it with a per-run nonce and a timeout, and parses only verdict lines
      that carry the nonce; a test the manifest lists but the run never reported
@@ -187,7 +187,7 @@ async def verify_sources(
         rep.tool_versions["verilator"] = ver
 
     # ---- lint (design only)
-    # warnings are reported but only CircuitLoop's fatal lint codes reject a candidate
+    # warnings are reported but only SiliconBreak X's fatal lint codes reject a candidate
     argv = [vbin, "--lint-only", "-Wall", "-Wno-fatal", "--top-module", case.top_module, str(LINT_POLICY),
             *map(str, sources)]
     await log("$ " + display_command(argv))

@@ -24,7 +24,7 @@ export interface UiState {
   inspectorDrawer: boolean; // narrow screens: inspector as a slide-over (not persisted)
 }
 
-const KEY = "circuitloop.ui";
+const KEY = "siliconbreak.ui";
 
 function load(): Partial<UiState> {
   try {

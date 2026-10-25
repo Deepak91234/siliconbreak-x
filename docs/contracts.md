@@ -1,4 +1,4 @@
-# CircuitLoop internal module contracts
+# SiliconBreak X internal module contracts
 
 This file fixes the Python interfaces between subsystems so they can be built and
 tested independently. **Signatures here are binding**; implementations may add
@@ -35,7 +35,7 @@ basys3_top  (trusted generator; fixed board ports; parameters CLK_HZ, TICKS_*, D
 
 * `cl_core` receives **clean, synchronized, debounced, active-high** inputs.
 * Timing constants are parameters (`TICKS_<MODE>`, `TICKS_STATE_<STATE>`), so simulation
-  overrides them with `-G` for an accelerated clock (default `CIRCUITLOOP_SIM_CLK_HZ=10000`).
+  overrides them with `-G` for an accelerated clock (default `SILICONBREAK_SIM_CLK_HZ=10000`).
 * Library modules usable inside `cl_core`: `cl_tick_div` (clock-enable generator),
   `cl_edge_rise` (rising-edge pulse), `cl_sync2`, `cl_debounce`, `cl_input_cond`.
 * Trace/stimulus formats: see the header of `backend/verification/harness/tb_main.cpp`.

@@ -1,9 +1,9 @@
 #!/bin/zsh
-# Start CircuitLoop for local development: FastAPI backend (port 8000) + Vite dev server (port 5173).
+# Start SiliconBreak X for local development: FastAPI backend (port 8000) + Vite dev server (port 5173).
 #
-# The Vivado container is NOT started by this script. CircuitLoop reuses a running
+# The Vivado container is NOT started by this script. SiliconBreak X reuses a running
 # `vivado_container` (your usual start_container.sh session) or, after you approve
-# it in the dashboard, starts its own headless `circuitloop_vivado` container.
+# it in the dashboard, starts its own headless `siliconbreak_vivado` container.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,5 +22,5 @@ BACKEND=$!
 FRONTEND=$!
 
 trap 'kill $BACKEND $FRONTEND 2>/dev/null; wait 2>/dev/null' INT TERM EXIT
-echo "CircuitLoop: http://127.0.0.1:5173  (API http://127.0.0.1:8000/api/health)"
+echo "SiliconBreak X: http://127.0.0.1:5173  (API http://127.0.0.1:8000/api/health)"
 wait

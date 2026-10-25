@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: counter-based debouncer.
+// SiliconBreak X preverified library: counter-based debouncer.
 // q follows d only after d has differed from q for STABLE_CYCLES consecutive
 // clock cycles, so bounces shorter than STABLE_CYCLES are rejected.
 // d must already be synchronized to clk (see cl_sync2 / cl_input_cond).

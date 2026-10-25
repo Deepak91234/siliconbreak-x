@@ -1,5 +1,5 @@
 [project]
-name = "circuitloop"
+name = "siliconbreak-x"
 version = "0.1.0"
 description = "Autonomous AI FPGA engineer for the Digilent Basys 3"
 requires-python = ">=3.11"

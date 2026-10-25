@@ -2,7 +2,7 @@
 
 Providers, chosen by SILICONBREAK_INVESTIGATOR (auto | bitdeer | anthropic | rules):
   bitdeer    Bitdeer Model Studio (preferred when BITDEER_API_KEY is set)
-  anthropic  Claude via CircuitLoop's AnthropicProvider (ANTHROPIC_API_KEY)
+  anthropic  Claude via SiliconBreak X's AnthropicProvider (ANTHROPIC_API_KEY)
   rules      offline static rules (rules.py) - deterministic and NOT AI
 
 Every finding leaves here as `suspected`. Model output is structured JSON
