@@ -242,6 +242,51 @@ def _trim_raw(raw: object, limit: int = 400) -> object:
     return raw
 
 
+_EDIT_TYPES = {"edit", "apply_patch"}
+_COMMAND_KEYS = {"fullCommand", "command", "extractedCommands"}
+
+
+def _judge_edit(d: dict, ok_path, label: str) -> tuple[bool, str]:
+    files = [f for f in (d.get("files") or []) if isinstance(f, dict)]
+    paths = [f.get("filePath") for f in files] or [d.get("filePath")]
+    ops_ok = all(f.get("operation", "update") == "update" and not f.get("moveTo") for f in files)
+    return ops_ok and all(ok_path(x) for x in paths), f"{label}: {', '.join(map(str, paths))}"
+
+
+def _judge_script(d: dict, ok_path, label: str) -> tuple[bool, str]:
+    """Approve a script request only if everything inside it that needs approval is an edit/patch update of
+    allowlisted files: no command anywhere, no other confirmation type, at least one edit found."""
+    edits: list[dict] = []
+    problems: list[str] = []
+
+    def walk(node: object, top: bool) -> None:
+        if isinstance(node, list):
+            for x in node:
+                walk(x, False)
+            return
+        if not isinstance(node, dict):
+            return
+        if _COMMAND_KEYS & node.keys():
+            problems.append("contains a command")
+        t = node.get("type")
+        if not top and isinstance(t, str) and t not in ("tool_use", "text"):
+            if t in _EDIT_TYPES:
+                edits.append(node)
+            elif t not in ("update",):
+                problems.append(f"contains {t}")
+        for k, v in node.items():
+            if k != "type":
+                walk(v, False)
+
+    walk(d, True)
+    if not edits and ({"filePath", "files", "patchContent"} & d.keys()):
+        edits.append(d)   # patch fields carried directly on the script details
+    if problems or not edits:
+        return False, f"{label}: " + ("; ".join(sorted(set(problems))) or "no edit found")
+    results = [_judge_edit(e, ok_path, "edit") for e in edits]
+    return all(ok for ok, _ in results), f"{label}: " + "; ".join(t for _, t in results)
+
+
 def make_raw_permission_handler(ws: Path, editable: list[str], rec: dict, typed_handler, log_raw=None):
     """Wire-level permission handler installed in place of the SDK dispatcher's.
 
@@ -284,10 +329,10 @@ def make_raw_permission_handler(ws: Path, editable: list[str], rec: dict, typed_
                 typ = str(d.get("type") or tu.get("confirmationType") or "")
                 tool = (tu.get("toolUse") or {}).get("name")
                 if typ in ("edit", "apply_patch"):
-                    files = [f for f in (d.get("files") or []) if isinstance(f, dict)]
-                    paths = [f.get("filePath") for f in files] or [d.get("filePath")]
-                    ops_ok = all(f.get("operation", "update") == "update" and not f.get("moveTo") for f in files)
-                    verdicts.append((ops_ok and all(ok_path(x) for x in paths), f"{typ} {', '.join(map(str, paths))} (via {tool})"))
+                    verdicts.append(_judge_edit(d, ok_path, f"{typ} via {tool}"))
+                elif typ == "script":
+                    # CLI 0.249: a Script tool call wraps the operations that need approval
+                    verdicts.append(_judge_script(d, ok_path, f"script via {tool}"))
                 else:
                     verdicts.append((False, f"{typ or 'unknown'} (via {tool})"))
             if verdicts and all(v for v, _ in verdicts) and "proceed_once" in options:
@@ -384,6 +429,9 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
     rec["trace"] = trace_path.name if trace_path.is_file() else None
     try:
         rec["permission_requests"] = raw_requests[:10]
+        if raw_requests:
+            (ws.parent / "droid_permissions.jsonl").write_text(
+                "".join(json.dumps(r, default=str) + "\n" for r in raw_requests))
     except NameError:
         pass
     budget.settle_droid(ledger_id, ok=rec["status"] == "completed", usage=rec.get("usage"), model=rec.get("model"))

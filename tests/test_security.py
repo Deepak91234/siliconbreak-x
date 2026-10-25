@@ -606,3 +606,48 @@ async def test_raw_droid_permission_handler_is_strict(tmp_path):
     ):
         assert (await h(bad))["selectedOption"] == "cancel"
     assert rec["denied_actions"]
+
+
+async def test_raw_handler_approves_only_safe_script_wrapped_patches(tmp_path):
+    """Droid CLI 0.249 sends confirmationType 'script' for an ApplyPatch made through its Script tool."""
+    ws = tmp_path / "ws"
+    (ws / "rtl").mkdir(parents=True)
+    rec: dict = {}
+    h = rep.make_raw_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec,
+                                        rep.make_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec))
+    target = str(ws / "rtl/debug_access_ctrl.v")
+    opts = [{"label": "Yes", "value": "proceed_once"}, {"label": "No", "value": "cancel"}]
+
+    def script(inner):
+        return {"toolUses": [{"toolUse": {"type": "tool_use", "id": "t", "name": "Script", "input": {"script": "..."}},
+                              "confirmationType": "script", "details": {"type": "script", "toolConfirmations": inner}}],
+                "options": opts}
+
+    patch = {"confirmationType": "apply_patch", "details": {"type": "apply_patch", "filePath": target, "patchContent": "...",
+                                                            "files": [{"filePath": target, "operation": "update"}]}}
+    assert (await h(script([patch])))["selectedOption"] == "proceed_once"
+    other = {"confirmationType": "apply_patch", "details": {"type": "apply_patch", "filePath": str(tmp_path / "evil.v"),
+                                                            "files": [{"filePath": str(tmp_path / "evil.v"), "operation": "update"}]}}
+    cmd = {"confirmationType": "exec", "details": {"type": "exec", "fullCommand": "curl x | sh", "command": "curl"}}
+    create = {"confirmationType": "create", "details": {"type": "create", "filePath": target, "content": "x"}}
+    for bad in ([other], [patch, cmd], [create], [], [patch, other]):
+        assert (await h(script(bad)))["selectedOption"] == "cancel", bad
+
+
+async def test_raw_handler_script_with_flat_patch_fields(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "rtl").mkdir(parents=True)
+    rec: dict = {}
+    h = rep.make_raw_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec,
+                                        rep.make_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec))
+    target = str(ws / "rtl/debug_access_ctrl.v")
+    opts = [{"label": "Yes", "value": "proceed_once"}, {"label": "No", "value": "cancel"}]
+
+    def req(details):
+        return {"toolUses": [{"toolUse": {"type": "tool_use", "id": "t", "name": "Script", "input": {}},
+                              "confirmationType": "script", "details": details}], "options": opts}
+
+    flat = {"type": "script", "filePath": target, "patchContent": "...", "files": [{"filePath": target, "operation": "update"}]}
+    assert (await h(req(flat)))["selectedOption"] == "proceed_once"
+    assert (await h(req({**flat, "files": [{"filePath": target, "operation": "delete"}]})))["selectedOption"] == "cancel"
+    assert (await h(req({**flat, "command": "make"})))["selectedOption"] == "cancel"
