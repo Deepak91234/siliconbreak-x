@@ -24,7 +24,7 @@ from pydantic import BaseModel, ValidationError
 
 from backend.agent import prompts
 from backend.agent.llm.base import LLMError, LLMProvider, format_validation_errors
-from backend.agent.offline_parser import interpret_offline
+from backend.agent.offline_parser import NO_LLM, interpret_offline
 from backend.specifications.ir import DesignSpec
 from backend.specifications.validate import validate_spec
 
@@ -238,7 +238,8 @@ def _offline(text: str, current: DesignSpec | None, note: str | None = None) -> 
         change_summary = summarize_changes(current, r.spec)
     message = r.message
     if note:
-        message = f"{note} {message}".strip()
+        # An LLM is configured but failed: the offline messages must not claim none is configured.
+        message = f"{note} {message.replace(NO_LLM, 'The offline rules')}".strip()
     return IntentResult(kind=r.kind, spec=r.spec, message=message, change_summary=change_summary,
                         assumptions=list(r.assumptions), unsupported_reasons=list(r.unsupported_reasons),
                         interpreter=OFFLINE_INTERPRETER)

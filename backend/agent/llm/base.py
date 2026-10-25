@@ -11,6 +11,7 @@ lets the unit tests swap in a fake provider that implements this Protocol.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Generic, Literal, Optional, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -117,6 +118,52 @@ class LLMProvider(Protocol):
         output_model: type[T],
         max_tokens: int = 16000,
     ) -> LLMResult[T]: ...
+
+
+# ------------------------------------------------------------------ JSON extraction (unconstrained replies)
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
+_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.S)
+
+
+def first_json_object(text: str) -> str | None:
+    """The first complete top-level JSON object in text (string-aware brace matching), or None."""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
+def clean_json_text(text: str) -> str:
+    t = _THINK_RE.sub("", text or "").strip()
+    m = _FENCE_RE.match(t)
+    if m:
+        t = m.group(1).strip()
+    if t and t[0] not in "{[":
+        start = t.find("{")
+        end = t.rfind("}")
+        if 0 <= start < end:
+            t = t[start:end + 1]
+    return t
+
 
 
 def parse_structured_text(text: str, output_model: type[T], *, provider: str | None = None,

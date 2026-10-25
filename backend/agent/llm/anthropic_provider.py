@@ -18,10 +18,17 @@ Request shape (verified against the installed anthropic SDK 1.15.0):
     disabled per provider (`fallbacks=False`) if an account or region rejects it.
   * An explicit request timeout is passed so the SDK does not refuse large
     `max_tokens` values for non-streaming calls.
+  * Some schemas compile to a grammar larger than the API accepts (400 "The
+    compiled grammar is too large"). Then the request is retried once without
+    the constrained format: the schema is stated in the system prompt and the
+    reply is validated locally with the same pydantic model, so unvalidated
+    data still cannot pass. The provider remembers which output models need
+    this so later calls skip the doomed constrained attempt.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -29,7 +36,7 @@ from typing import Any
 import anthropic
 import httpx2
 
-from .base import LLMError, LLMResult, T, parse_structured_text
+from .base import LLMError, LLMResult, T, clean_json_text, parse_structured_text
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +71,7 @@ class AnthropicProvider:
         self.fallbacks = fallbacks
         self.timeout_s = timeout_s
         self._secret = api_key  # only used to scrub error text; never logged or returned
+        self._unconstrained: set[str] = set()  # output models whose schema the API cannot compile
         self._client = client if client is not None else anthropic.AsyncAnthropic(
             api_key=api_key, max_retries=max_retries)
 
@@ -72,19 +80,27 @@ class AnthropicProvider:
 
     # ------------------------------------------------------------------ request
     def build_request(self, *, purpose: str, system: str, messages: list[dict],
-                      output_model: type[T], max_tokens: int) -> dict:
-        """Keyword arguments for messages.create (exposed for tests and the smoke script)."""
+                      output_model: type[T], max_tokens: int, constrained: bool = True) -> dict:
+        """Keyword arguments for messages.create (exposed for tests and the smoke script).
+
+        `constrained=False` drops the json_schema format and states the schema in the
+        system prompt instead (for schemas whose grammar the API refuses to compile).
+        """
         if not messages or messages[-1].get("role") != "user":
             raise ValueError("messages must end with a user turn (assistant prefill is not supported)")
+        schema = anthropic.transform_schema(output_model)
+        output_config: dict[str, Any] = {"effort": EFFORT_BY_PURPOSE.get(purpose, DEFAULT_EFFORT)}
+        if constrained:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
+        else:
+            system = (f"{system}\n\nRespond with a single JSON object that validates against this JSON Schema "
+                      f"(no prose, no code fences):\n{json.dumps(schema)}")
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
             "system": system,
             "messages": messages,
-            "output_config": {
-                "effort": EFFORT_BY_PURPOSE.get(purpose, DEFAULT_EFFORT),
-                "format": {"type": "json_schema", "schema": anthropic.transform_schema(output_model)},
-            },
+            "output_config": output_config,
             "timeout": httpx2.Timeout(self.timeout_s, connect=10.0),
         }
         if self.fallbacks:
@@ -94,19 +110,32 @@ class AnthropicProvider:
 
     async def structured(self, *, purpose: str, system: str, messages: list[dict],
                          output_model: type[T], max_tokens: int = 16000) -> LLMResult[T]:
-        kwargs = self.build_request(purpose=purpose, system=system, messages=messages,
-                                    output_model=output_model, max_tokens=max_tokens)
+        constrained = output_model.__name__ not in self._unconstrained
         t0 = time.monotonic()
         try:
-            if self.fallbacks:
-                resp = await self._client.beta.messages.create(**kwargs)
-            else:
-                resp = await self._client.messages.create(**kwargs)
+            resp = await self._create(self.build_request(purpose=purpose, system=system, messages=messages,
+                                                         output_model=output_model, max_tokens=max_tokens,
+                                                         constrained=constrained))
         except Exception as e:  # mapped most-specific-first below
             err = self.map_error(e)
-            log.warning("LLM call failed: purpose=%s model=%s kind=%s status=%s request_id=%s",
-                        purpose, self.model, err.kind, err.status_code, err.request_id)
-            raise err from None
+            if constrained and _schema_too_large(err):
+                log.warning("Anthropic cannot compile the %s schema (%s); retrying with the schema in the prompt",
+                            output_model.__name__, err.message[:120])
+                self._unconstrained.add(output_model.__name__)
+                constrained = False
+                try:
+                    resp = await self._create(self.build_request(purpose=purpose, system=system, messages=messages,
+                                                                 output_model=output_model, max_tokens=max_tokens,
+                                                                 constrained=False))
+                except Exception as e2:
+                    err = self.map_error(e2)
+                    log.warning("LLM call failed: purpose=%s model=%s kind=%s status=%s request_id=%s",
+                                purpose, self.model, err.kind, err.status_code, err.request_id)
+                    raise err from None
+            else:
+                log.warning("LLM call failed: purpose=%s model=%s kind=%s status=%s request_id=%s",
+                            purpose, self.model, err.kind, err.status_code, err.request_id)
+                raise err from None
         duration = time.monotonic() - t0
         request_id = getattr(resp, "_request_id", None)
         served_by = getattr(resp, "model", None) or self.model
@@ -135,11 +164,16 @@ class AnthropicProvider:
             raise LLMError("invalid_output", f"unexpected stop_reason {stop!r} for a structured request",
                            provider=self.name, model=served_by, request_id=request_id, raw_text=_text_of(resp))
 
-        text = _text_of(resp)
+        text = _text_of(resp) if constrained else clean_json_text(_text_of(resp))
         value = parse_structured_text(text, output_model, provider=self.name, model=served_by, request_id=request_id)
         return LLMResult[output_model](  # type: ignore[valid-type]
             value=value, text=text, model=served_by, provider=self.name, stop_reason=stop,
             usage=usage, duration_s=round(duration, 3), request_id=request_id)
+
+    async def _create(self, kwargs: dict) -> Any:
+        if self.fallbacks:
+            return await self._client.beta.messages.create(**kwargs)
+        return await self._client.messages.create(**kwargs)
 
     # ------------------------------------------------------------------ errors
     def map_error(self, e: BaseException) -> LLMError:
@@ -180,6 +214,12 @@ class AnthropicProvider:
         if self._secret and text:
             text = text.replace(self._secret, "***")
         return text
+
+
+def _schema_too_large(err: LLMError) -> bool:
+    """400s where the API refuses the json_schema format itself (not the request content)."""
+    m = (err.message or "").lower()
+    return err.status_code == 400 and ("grammar" in m or ("schema" in m and ("too large" in m or "too complex" in m)))
 
 
 def _text_of(resp: Any) -> str:

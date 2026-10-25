@@ -262,3 +262,69 @@ async def test_llm_refusal_is_reported_unsupported():
     fake = FakeProvider([llm_error("refusal", "declined")])
     r = await interpret_request("Build a counter", None, fake)
     assert r.kind == "unsupported" and r.spec is None and r.unsupported_reasons == ["declined"]
+
+
+# ------------------------------------------------------------------ schema too large for the constrained grammar
+
+class _SeqMessages:
+    """Returns (or raises) the given outcomes in order and records every request."""
+
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        out = self.outcomes.pop(0)
+        if isinstance(out, BaseException):
+            raise out
+        return out
+
+
+GRAMMAR_MSG = ("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': "
+               "'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas.'}}")
+
+
+def _bad_request(message: str):
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    resp = httpx2.Response(400, request=req, headers={"request-id": "req_400"})
+    return anthropic.BadRequestError(message, response=resp, body=None)
+
+
+async def test_grammar_too_large_retries_once_with_schema_in_prompt():
+    seq = _SeqMessages([_bad_request(GRAMMAR_MSG), _resp('```json\n{"verilog": "module cl_core; endmodule", "explanation": "e"}\n```')])
+    client = SimpleNamespace(beta=SimpleNamespace(messages=seq), messages=None)
+    p = AnthropicProvider(SECRET, "claude-opus-5-5", client=client)
+    res = await p.structured(purpose="rtl", system="sys", messages=[{"role": "user", "content": "go"}], output_model=RtlDraft)
+    assert res.value.explanation == "e"
+    first, second = seq.calls
+    assert first["output_config"]["format"]["type"] == "json_schema"
+    assert "format" not in second["output_config"] and second["output_config"]["effort"] == "high"
+    assert second["system"].startswith("sys") and '"verilog"' in second["system"]
+    # remembered: the next call for the same model goes straight to the unconstrained form
+    seq.outcomes.append(_resp('{"verilog": "v", "explanation": "again"}'))
+    res2 = await p.structured(purpose="rtl", system="sys", messages=[{"role": "user", "content": "go"}], output_model=RtlDraft)
+    assert res2.value.explanation == "again" and "format" not in seq.calls[2]["output_config"]
+
+
+async def test_unconstrained_reply_is_still_validated_locally():
+    seq = _SeqMessages([_bad_request(GRAMMAR_MSG), _resp('{"verilog": 5}')])
+    p = AnthropicProvider(SECRET, "claude-opus-5-5", client=SimpleNamespace(beta=SimpleNamespace(messages=seq), messages=None))
+    with pytest.raises(LLMError) as ei:
+        await p.structured(purpose="rtl", system="s", messages=[{"role": "user", "content": "go"}], output_model=RtlDraft)
+    assert ei.value.kind == "invalid_output"
+
+
+async def test_other_400s_are_not_retried():
+    seq = _SeqMessages([_bad_request("messages: text content blocks must be non-empty")])
+    p = AnthropicProvider(SECRET, "claude-opus-5-5", client=SimpleNamespace(beta=SimpleNamespace(messages=seq), messages=None))
+    with pytest.raises(LLMError) as ei:
+        await p.structured(purpose="rtl", system="s", messages=[{"role": "user", "content": "go"}], output_model=RtlDraft)
+    assert ei.value.kind == "api" and ei.value.status_code == 400 and len(seq.calls) == 1
+
+
+async def test_llm_failure_fallback_does_not_claim_no_llm_is_configured():
+    fake = FakeProvider([llm_error("api", "Anthropic API error 400: something")])
+    r = await interpret_request("Display d2d3 on my fpga board", None, fake)
+    assert r.interpreter == "offline-rules" and "LLM request failed" in r.message
+    assert "No LLM is configured" not in r.message and "set ANTHROPIC_API_KEY" not in r.message

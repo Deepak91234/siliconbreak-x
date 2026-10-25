@@ -20,61 +20,17 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import Any
 
 import httpx
 
-from .base import LLMError, LLMResult, T, parse_structured_text
+from .base import _THINK_RE, LLMError, LLMResult, T, clean_json_text, first_json_object, parse_structured_text  # noqa: F401 (clean_json_text re-exported)
 
 log = logging.getLogger(__name__)
 
 PROVIDER_NAME = "bitdeer"
 DEFAULT_TIMEOUT_S = 600.0
-
-_THINK_RE = re.compile(r"<think>.*?</think>", re.S)
-_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.S)
-
-
-def first_json_object(text: str) -> str | None:
-    """The first complete top-level JSON object in text (string-aware brace matching), or None."""
-    start = text.find("{")
-    if start < 0:
-        return None
-    depth, in_str, esc = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-        elif ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start:i + 1]
-    return None
-
-
-def clean_json_text(text: str) -> str:
-    t = _THINK_RE.sub("", text or "").strip()
-    m = _FENCE_RE.match(t)
-    if m:
-        t = m.group(1).strip()
-    if t and t[0] not in "{[":
-        start = t.find("{")
-        end = t.rfind("}")
-        if 0 <= start < end:
-            t = t[start:end + 1]
-    return t
-
 
 class BitdeerProvider:
     name = PROVIDER_NAME
