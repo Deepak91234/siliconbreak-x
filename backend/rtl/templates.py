@@ -35,7 +35,9 @@ from backend.specifications.ir import (
     CounterBehavior,
     DesignSpec,
     LedPatternBehavior,
+    DIGIT_BITS,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
     TrafficState,
 )
@@ -606,6 +608,34 @@ def _traffic_light_core(spec: DesignSpec, b: TrafficLightBehavior) -> str:
     return _module(spec, body, used_inputs, set(ticks))
 
 
+# --------------------------------------------------------------------------- seven_segment
+
+
+def _seven_segment_core(spec: DesignSpec, b: SevenSegmentBehavior) -> str:
+    """Constant digit values for the trusted display driver in the wrapper.
+
+    Bits [5k+4:5k] of the output describe digit indices[k] as {lit, hex}; a
+    blank position is 5'b00000. The core needs no state, so `clk` is sunk.
+    """
+    out = spec.output(b.output)
+    shown = b.digit_map(list(out.indices))
+    fields = []
+    for k, pos in enumerate(out.indices):
+        h = shown.get(pos)
+        fields.append((f"{DIGIT_BITS}'b00000" if h is None else f"{{1'b1, 4'h{h:X}}}", pos, h))
+    lines = [f"    // '{b.text}' right-aligned; each field is {{lit, hex}} for one digit position"]
+    concat = ", ".join(f for f, _pos, _h in reversed(fields))
+    legend = ", ".join(f"AN{pos}={'blank' if h is None else f'{h:X}'}" for _f, pos, h in reversed(fields))
+    lines.append(f"    assign {b.output} = {{{concat}}};  // {legend}")
+    body = "\n".join(lines) + """
+
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire @unused_clk@ = clk;  // static text: no clocked logic
+    /* verilator lint_on UNUSEDSIGNAL */
+"""
+    return _module(spec, body, set(), set())
+
+
 # --------------------------------------------------------------------------- entry point
 
 
@@ -619,4 +649,6 @@ def generate_core(spec: DesignSpec) -> str:
         return _led_pattern_core(spec, b)
     if isinstance(b, TrafficLightBehavior):
         return _traffic_light_core(spec, b)
+    if isinstance(b, SevenSegmentBehavior):
+        return _seven_segment_core(spec, b)
     raise TemplateUnavailable(f"no template generator for family '{spec.family}'")

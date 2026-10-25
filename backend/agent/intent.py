@@ -64,6 +64,7 @@ class InputDraft(BaseModel):
 
 class OutputDraft(BaseModel):
     name: str
+    port: Literal["led", "display"]
     indices: list[int]
     description: str
 
@@ -87,7 +88,7 @@ class TrafficStateDraft(BaseModel):
 
 
 class BehaviorDraft(BaseModel):
-    family: Literal["counter", "blinker", "led_pattern", "traffic_light"]
+    family: Literal["counter", "blinker", "led_pattern", "traffic_light", "seven_segment"]
     output: str
     direction: Optional[Literal["up", "down", "left", "right"]]
     direction_control: Optional[DirectionControlDraft]
@@ -103,6 +104,7 @@ class BehaviorDraft(BaseModel):
     request_input: Optional[str]
     request_after: Optional[str]
     request_state: Optional[TrafficStateDraft]
+    text: Optional[str]
 
 
 class SpecDraft(BaseModel):
@@ -130,6 +132,7 @@ _FAMILY_FIELDS: dict[str, tuple[str, ...]] = {
     "led_pattern": ("output", "pattern", "source_inputs", "direction", "direction_control", "rate_modes",
                     "enable_input", "reset_input"),
     "traffic_light": ("output", "states", "request_input", "request_after", "request_state", "reset_input"),
+    "seven_segment": ("output", "text"),
 }
 _DIRECTIONS = {"counter": ("up", "down"), "led_pattern": ("left", "right")}
 _PATTERNS = {"blinker": ("together", "alternate"),
@@ -170,7 +173,7 @@ def draft_to_spec(draft: SpecDraft) -> DesignSpec:
         "title": draft.title,
         "summary": draft.summary,
         "inputs": [{k: v for k, v in i.model_dump().items()} for i in draft.inputs],
-        "outputs": [{"name": o.name, "port": "led", "indices": o.indices, "description": o.description}
+        "outputs": [{"name": o.name, "port": o.port, "indices": o.indices, "description": o.description}
                     for o in draft.outputs],
         "behavior": behavior,
         "assumptions": list(draft.assumptions),
@@ -206,9 +209,9 @@ def summarize_changes(old: DesignSpec, new: DesignSpec) -> list[str]:
     old_out = {o.name: o for o in old.outputs}
     for o in new.outputs:
         if o.name not in old_out:
-            out.append(f"added output {o.name} on LEDs {o.indices}")
-        elif old_out[o.name].indices != o.indices:
-            out.append(f"output {o.name}: LEDs {old_out[o.name].indices} -> {o.indices}")
+            out.append(f"added output {o.name} on {'display digits' if o.port == 'display' else 'LEDs'} {o.indices}")
+        elif old_out[o.name].indices != o.indices or old_out[o.name].port != o.port:
+            out.append(f"output {o.name}: {old_out[o.name].port} {old_out[o.name].indices} -> {o.port} {o.indices}")
     for n in old_out:
         if n not in {o.name for o in new.outputs}:
             out.append(f"removed output {n}")

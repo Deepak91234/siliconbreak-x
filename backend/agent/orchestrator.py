@@ -118,7 +118,8 @@ def _sha256(path: Path) -> str:
 def _spec_brief(spec: DesignSpec) -> str:
     b = spec.behavior
     ins = ", ".join(f"{i.name}={i.board_signal}" for i in spec.inputs) or "none"
-    outs = ", ".join(f"{o.name}=LED{'/'.join(map(str, o.indices))}" for o in spec.outputs)
+    outs = ", ".join(f"{o.name}=" + (f"display AN{'/'.join(map(str, sorted(o.indices, reverse=True)))}" if o.port == "display"
+                                       else f"LED{'/'.join(map(str, o.indices))}") for o in spec.outputs)
     extra = ""
     modes = getattr(b, "rate_modes", None)
     if modes:

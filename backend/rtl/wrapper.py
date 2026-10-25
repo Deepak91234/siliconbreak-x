@@ -10,7 +10,9 @@ Hierarchy produced for every design:
     basys3_top  (generated here; fixed board port list; timing parameters)
       |- cl_input_cond  per bound input   (preverified library: sync + debounce)
       |- cl_core        (behaviour; written by the RTL generator / LLM)
-      |- unused LEDs driven low, seven-segment display blanked
+      |- cl_sevenseg    when the spec has a display output (preverified library:
+      |                 digit multiplexing + hex glyph decode onto seg/an)
+      |- unused LEDs driven low; the display blanked when not used
 """
 
 from __future__ import annotations
@@ -19,11 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.specifications.board import REPO_ROOT, Board, load_board
-from backend.specifications.ir import DesignSpec
+from backend.specifications.ir import DIGIT_BITS, DISPLAY_DIGITS, DesignSpec
 from backend.specifications.timing import timing_params
 
 LIBRARY_DIR = REPO_ROOT / "rtl" / "library"
-LIBRARY_FILES = ("cl_sync2.v", "cl_debounce.v", "cl_input_cond.v", "cl_tick_div.v", "cl_edge_rise.v")
+LIBRARY_FILES = ("cl_sync2.v", "cl_debounce.v", "cl_input_cond.v", "cl_tick_div.v", "cl_edge_rise.v", "cl_sevenseg.v")
 TOP_MODULE = "basys3_top"
 CORE_MODULE = "cl_core"
 
@@ -53,8 +55,13 @@ def core_ports(spec: DesignSpec) -> list[CorePort]:
         deb = f"debounced {i.debounce_ms:g} ms" if i.debounce_ms > 0 else "not debounced"
         ports.append(CorePort("input", i.name, 1, f"{i.board_signal}: synchronized, {deb}, active-high"))
     for o in spec.outputs:
-        leds = ", ".join(f"bit{k}->led[{idx}]" for k, idx in enumerate(o.indices))
-        ports.append(CorePort("output", o.name, o.width, leds))
+        if o.port == "display":
+            where = ", ".join(f"[{DIGIT_BITS * k + DIGIT_BITS - 1}:{DIGIT_BITS * k}]->digit AN{idx}"
+                              for k, idx in enumerate(o.indices))
+            ports.append(CorePort("output", o.name, o.width, f"seven-segment {{lit, hex[3:0]}} per digit: {where}"))
+        else:
+            leds = ", ".join(f"bit{k}->led[{idx}]" for k, idx in enumerate(o.indices))
+            ports.append(CorePort("output", o.name, o.width, leds))
     return ports
 
 
@@ -129,18 +136,39 @@ def generate_wrapper(spec: DesignSpec, board: Board | None = None) -> str:
     out += ["", "    // ---- LED mapping (unused LEDs are driven off)"]
     driver: dict[int, str] = {}
     for o in spec.outputs:
+        if o.port != "led":
+            continue
         for k, idx in enumerate(o.indices):
             driver[idx] = f"{o.name}[{k}]" if o.width > 1 else o.name
     for idx in range(16):
         out.append(f"    assign led[{idx}] = {driver.get(idx, LED_OFF)};")
 
-    out += [
-        "",
-        "    // ---- seven-segment display blanked (active-low cathodes and anodes)",
-        "    assign seg = 7'b1111111;",
-        "    assign dp  = 1'b1;",
-        "    assign an  = 4'b1111;",
-    ]
+    disp = spec.display_output
+    if disp is None:
+        out += [
+            "",
+            "    // ---- seven-segment display blanked (active-low cathodes and anodes)",
+            "    assign seg = 7'b1111111;",
+            "    assign dp  = 1'b1;",
+            "    assign an  = 4'b1111;",
+        ]
+    else:
+        slices = []
+        for pos in reversed(range(DISPLAY_DIGITS)):
+            if pos in disp.indices:
+                k = disp.indices.index(pos)
+                slices.append(f"{disp.name}[{DIGIT_BITS * k + DIGIT_BITS - 1}:{DIGIT_BITS * k}]")
+            else:
+                slices.append(f"{DIGIT_BITS}'b00000")
+        out += [
+            "",
+            "    // ---- seven-segment display: multiplexing + glyph decode (preverified library)",
+            f"    wire [{DIGIT_BITS * DISPLAY_DIGITS - 1}:0] _display_digits = {{{', '.join(slices)}}};  // AN3 .. AN0",
+            "    cl_sevenseg #(.DIGIT_CYCLES(SEG_DIGIT_CYCLES)) u_display (",
+            "        .clk(clk), .digits(_display_digits), .seg(seg), .an(an)",
+            "    );",
+            "    assign dp = 1'b1;  // decimal points off",
+        ]
     used = {i.board_signal for i in spec.inputs}
     unused = [f"sw[{n}]" for n in range(16) if f"sw[{n}]" not in used]
     unused += [b for b in ("btnC", "btnU", "btnL", "btnR", "btnD") if b not in used]

@@ -25,13 +25,16 @@ from __future__ import annotations
 import re
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 SPEC_VERSION = "1"
 
 BUTTON_PORTS = ("btnC", "btnU", "btnL", "btnR", "btnD")
 INPUT_PORTS = BUTTON_PORTS + ("sw",)
-OUTPUT_PORTS = ("led",)  # seven-segment support is planned; not part of the MVP IR
+OUTPUT_PORTS = ("led", "display")  # display = the 4-digit seven-segment display
+DISPLAY_DIGITS = 4  # Basys 3: AN3 (leftmost) .. AN0 (rightmost)
+DIGIT_BITS = 5      # per display digit on the core port: {lit, hex[3:0]}
+DISPLAY_CHARS = "0123456789abcdef "  # what the seven_segment behaviour can show (hex digits + blank)
 
 _IDENT_RE = re.compile(r"^[a-z][a-z0-9_]{0,30}$")
 _RESERVED = {
@@ -107,25 +110,39 @@ class InputBinding(_Model):
 
 
 class OutputBinding(_Model):
-    """A core output bus driving board LEDs. Core bit i drives led[indices[i]]."""
+    """A core output bus.
+
+    port="led":     core bit i drives led[indices[i]].
+    port="display": the seven-segment display. `indices` are digit positions
+                    (0 = rightmost digit AN0 ... 3 = leftmost AN3). Core bits
+                    [5k+4:5k] describe digit indices[k] as {lit, hex[3:0]}; the
+                    trusted wrapper multiplexes and decodes them onto seg/an.
+    """
 
     name: Identifier
-    port: Literal["led"] = "led"
+    port: Literal["led", "display"] = "led"
     indices: list[int] = Field(min_length=1, max_length=16)
     description: str = ""
 
-    @field_validator("indices")
-    @classmethod
-    def _check_indices(cls, v: list[int]) -> list[int]:
-        if any(i < 0 or i > 15 for i in v):
-            raise ValueError("LED indices must be 0-15")
+    @model_validator(mode="after")
+    def _check_indices(self) -> "OutputBinding":
+        v = self.indices
         if len(set(v)) != len(v):
-            raise ValueError("LED indices must be unique within an output")
-        return v
+            raise ValueError("indices must be unique within an output")
+        if self.port == "led" and any(i < 0 or i > 15 for i in v):
+            raise ValueError("LED indices must be 0-15")
+        if self.port == "display" and any(i < 0 or i >= DISPLAY_DIGITS for i in v):
+            raise ValueError(f"display digit positions must be 0-{DISPLAY_DIGITS - 1} (0 = rightmost)")
+        return self
 
     @property
     def width(self) -> int:
-        return len(self.indices)
+        return len(self.indices) * (DIGIT_BITS if self.port == "display" else 1)
+
+    @property
+    def leds(self) -> list[int]:
+        """Physical LEDs this output drives (none for the display)."""
+        return list(self.indices) if self.port == "led" else []
 
 
 # --------------------------------------------------------------------------- behaviour
@@ -232,12 +249,44 @@ class TrafficLightBehavior(_Model):
     reset_input: Optional[Identifier] = None
 
 
+def check_display_text(value: str) -> str:
+    if not 1 <= len(value) <= DISPLAY_DIGITS:
+        raise ValueError(f"display text must be 1-{DISPLAY_DIGITS} characters")
+    bad = sorted({c for c in value.lower() if c not in DISPLAY_CHARS})
+    if bad:
+        raise ValueError(f"the seven-segment display can show hex digits 0-9, A-F and blanks; not {bad}")
+    return value
+
+
+class SevenSegmentBehavior(_Model):
+    """Static text on the seven-segment display.
+
+    `text` is shown right-aligned on the display output's digit positions,
+    leftmost character on the highest position; positions without a character
+    (and spaces) are blank. Letters a-f use the conventional A, b, C, d, E, F
+    glyphs. The decimal point stays off.
+    """
+
+    family: Literal["seven_segment"] = "seven_segment"
+    output: Identifier
+    text: Annotated[str, AfterValidator(check_display_text)]
+
+    def digit_map(self, positions: list[int]) -> dict[int, Optional[int]]:
+        """Display position -> hex value shown there (None = blank), right-aligned."""
+        order = sorted(positions, reverse=True)  # leftmost first
+        chars = list(self.text.rjust(len(order)))
+        out: dict[int, Optional[int]] = {}
+        for pos, ch in zip(order, chars):
+            out[pos] = None if ch == " " else int(ch, 16)
+        return out
+
+
 Behavior = Annotated[
-    Union[CounterBehavior, BlinkerBehavior, LedPatternBehavior, TrafficLightBehavior],
+    Union[CounterBehavior, BlinkerBehavior, LedPatternBehavior, TrafficLightBehavior, SevenSegmentBehavior],
     Field(discriminator="family"),
 ]
 
-FAMILIES = ("counter", "blinker", "led_pattern", "traffic_light")
+FAMILIES = ("counter", "blinker", "led_pattern", "traffic_light", "seven_segment")
 
 
 # --------------------------------------------------------------------------- spec
@@ -270,6 +319,14 @@ class DesignSpec(_Model):
                 return o
         raise KeyError(name)
 
+    @property
+    def used_leds(self) -> set[int]:
+        return {i for o in self.outputs for i in o.leds}
+
+    @property
+    def display_output(self) -> Optional[OutputBinding]:
+        return next((o for o in self.outputs if o.port == "display"), None)
+
     @model_validator(mode="after")
     def _structural_checks(self) -> "DesignSpec":
         """Structural consistency only; board capability checks live in validate.py."""
@@ -281,10 +338,12 @@ class DesignSpec(_Model):
         dup = {s for s in sigs if sigs.count(s) > 1}
         if dup:
             raise ValueError(f"board inputs bound more than once: {sorted(dup)}")
-        leds = [i for o in self.outputs for i in o.indices]
+        leds = [i for o in self.outputs for i in o.leds]
         dup = {i for i in leds if leds.count(i) > 1}
         if dup:
             raise ValueError(f"LEDs driven by more than one output: {sorted(dup)}")
+        if sum(1 for o in self.outputs if o.port == "display") > 1:
+            raise ValueError("there is one seven-segment display; at most one output may use port 'display'")
 
         input_names = {b.name for b in self.inputs}
         output_names = {b.name for b in self.outputs}
@@ -293,6 +352,15 @@ class DesignSpec(_Model):
                 raise ValueError(f"behaviour references unknown input '{ref}'")
         if self.behavior.output not in output_names:
             raise ValueError(f"behaviour drives unknown output '{self.behavior.output}'")
+        driven = self.output(self.behavior.output)
+        if isinstance(self.behavior, SevenSegmentBehavior):
+            if driven.port != "display":
+                raise ValueError("the seven_segment behaviour must drive an output with port 'display'")
+            if len(self.behavior.text) > len(driven.indices):
+                raise ValueError(f"display text '{self.behavior.text}' has {len(self.behavior.text)} characters but "
+                                 f"the display output has only {len(driven.indices)} digit positions")
+        elif driven.port != "led":
+            raise ValueError(f"the {self.behavior.family} behaviour drives LEDs; output '{driven.name}' is the display")
 
         modes = getattr(self.behavior, "rate_modes", [])
         if modes:

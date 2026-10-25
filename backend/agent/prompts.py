@@ -64,6 +64,14 @@ traffic_light: start in states[0] with the state timer at 0; the output shows `l
   request_after ends while the latch is set, go to request_state (for TICKS_STATE_<REQUEST_STATE> cycles) and clear
   the latch, then continue with the state that follows request_after. request_state is otherwise skipped.
 - reset_input high: states[0], timer restarted, request latch cleared (held while reset is high).""",
+    "seven_segment": """\
+seven_segment: static text on the 4-digit seven-segment display. The display output has DIGIT positions as
+indices (0 = rightmost digit AN0 ... 3 = leftmost AN3); its core width is 5 bits per position. Bits [5k+4:5k]
+describe digit indices[k] as {lit, hex[3:0]}: lit=1 shows the hex value with the A b C d E F glyphs, lit=0 keeps
+that digit dark. `text` (1-4 characters from 0-9, a-f, A-F or space) is right-aligned: its last character is
+on the lowest listed position, and positions without a character (or with a space) are blank (5'b00000). The
+trusted wrapper multiplexes the digits onto seg/an (cl_sevenseg); cl_core only drives the constant digit fields
+and has no clocked logic (sink clk). The decimal points stay off.""",
 }
 
 COMMON_SEMANTICS = """\
@@ -81,22 +89,26 @@ CircuitLoop DesignSpec (JSON), or explain honestly why it cannot be built.
 Board inputs (refer to them only by these trusted port names; never by package pins such as W19 or U16):
   buttons: btnC (center), btnU (up), btnL (left), btnR (right), btnD (down)
   switches: sw with index 0-15 (sw[0] .. sw[15])
-Board outputs: led with indices 0-15 (16 LEDs, LED0 = rightmost). Nothing else.
-Exactly four behaviour families exist:
+Board outputs: led with indices 0-15 (16 LEDs, LED0 = rightmost), and the 4-digit seven-segment display
+(port "display", digit positions 0-3, 0 = rightmost). Nothing else.
+Exactly five behaviour families exist:
   counter        binary counter on LEDs (up/down, wrap or saturate, speed modes, reset, enable, direction control)
   blinker        LEDs blinking with 50% duty ('together' or 'alternate'), speed modes, enable
   led_pattern    mirror_inputs / invert_inputs (LEDs follow switches/buttons), chase, bounce (Knight Rider), fill (bar)
   traffic_light  cyclic FSM of 2-8 states with durations (<= 20 s each) and light patterns, optional latched
                  request button that inserts a request_state, optional reset
+  seven_segment  static text of up to 4 hex digits (0-9, A-F) and blanks on the seven-segment display, e.g.
+                 "Display d2d3" or "show 1234"; letters outside A-F (H, L, P, ...) cannot be shown
 Rates: RateMode.hz is 0 < hz <= 1000 steps per second (blinker: blink frequency). Modes are evaluated in order;
 the first whose when_input equals when_level wins; the LAST mode must be unconditional (when_input null).
 The design always runs from the single 100 MHz board clock.
 
 ## Requests you must answer with kind "unsupported" (explain the specific limitation; do not approximate silently)
-VGA/HDMI video, UART/serial/USB communication, the seven-segment display (not in the MVP IR yet), PMOD headers,
+VGA/HDMI video, UART/serial/USB communication, counting or animating on the seven-segment display (only static
+hex text is supported), letters other than A-F on the display, PMOD headers,
 audio/buzzers/PWM sound, any external parts (sensors, motors, servos, displays, keyboards), clocks above 100 MHz or
 other clock frequencies, more than 16 LEDs or more than 16 switches, memories/CPUs/arbitrary logic, or anything
-that does not fit one of the four families. Put each limitation in unsupported_reasons. If part of a request is
+that does not fit one of the five families. Put each limitation in unsupported_reasons. If part of a request is
 supportable, you may say what could be built instead in `message`, but still return "unsupported" with spec null.
 
 ## Other kinds
@@ -115,8 +127,9 @@ counter starts at 0, LED0 = least significant bit) and record every assumption i
   Good: speed_btn, reset_btn, dir_sw, count, leds, lights, fast, normal, green.
 - inputs: one entry per board input used; port is btnC/btnU/btnL/btnR/btnD or sw (index 0-15 for sw, null for
   buttons). debounce_ms 0-50; use 10 for buttons and switches unless told otherwise.
-- outputs: name, indices (list of LED numbers; core bit i drives led[indices[i]], so list LSB first),
-  description. The output width is len(indices). A counter's width is its LED count.
+- outputs: name, port ("led" or "display"), indices, description. For port "led": LED numbers; core bit i drives
+  led[indices[i]], so list LSB first; the width is len(indices); a counter's width is its LED count. For port
+  "display" (seven_segment only): digit positions, normally [0, 1, 2, 3]; name it e.g. "display".
 - behavior.family selects which behaviour fields apply; set fields that do not apply to null (or [] for lists):
     counter: output, direction (up/down), direction_control, rate_modes, reset_input, reset_value,
              initial_value, enable_input, wrap
@@ -126,6 +139,7 @@ counter starts at 0, LED0 = least significant bit) and record every assumption i
              direction_control, rate_modes (required for chase/bounce/fill), enable_input, reset_input
     traffic_light: output, states [{{name, duration_s, lights}}] (lights = bit pattern over the output bits),
              request_input, request_after (name of a state), request_state, reset_input
+    seven_segment: output (a port "display" output), text (e.g. "d2d3"); no inputs needed
 - Every input referenced by the behaviour must be declared in inputs, and every declared input should be used.
 - Values must fit the output width (reset_value, initial_value, lights).
 - A webcam verifies the board afterwards; it can resolve at most {MAX_CAMERA_EVENT_HZ:g} visible LED changes per
@@ -136,6 +150,7 @@ counter starts at 0, LED0 = least significant bit) and record every assumption i
 {FAMILY_SEMANTICS['blinker']}
 {FAMILY_SEMANTICS['led_pattern']}
 {FAMILY_SEMANTICS['traffic_light']}
+{FAMILY_SEMANTICS['seven_segment']}
 
 ## Output
 Respond only with the JSON object required by the response schema. `message` is what CircuitLoop shows the user:

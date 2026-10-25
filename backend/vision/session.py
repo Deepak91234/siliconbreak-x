@@ -271,8 +271,8 @@ class VisionSession:
         self._cal_flags: list[str] = []
         self._lock = threading.RLock()
         out = spec.output(spec.behavior.output)
-        self._design_leds = list(out.indices)
-        used = {i for o in spec.outputs for i in o.indices}
+        self._design_leds = list(out.leds)
+        used = spec.used_leds
         self._unused_leds = [i for i in range(16) if i not in used]
 
     # ------------------------------------------------------------------ ROI

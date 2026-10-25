@@ -20,6 +20,7 @@ from .ir import (
     DesignSpec,
     LedPatternBehavior,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
 )
 
@@ -35,7 +36,8 @@ Method = Literal["simulation", "physical"]
 class Requirement(BaseModel):
     id: str
     text: str
-    category: Literal["output", "rate", "sequence", "reset", "enable", "direction", "input", "wrap", "fsm", "pattern"]
+    category: Literal["output", "rate", "sequence", "reset", "enable", "direction", "input", "wrap", "fsm", "pattern",
+                      "display"]
     methods: list[Method]
     physical_note: Optional[str] = None  # why it can / cannot be observed by camera
 
@@ -101,12 +103,12 @@ def derive_requirements(spec: DesignSpec) -> list[Requirement]:
     b = spec.behavior
     out = spec.output(b.output)
     reqs: list[Requirement] = []
-    leds = ", ".join(f"LED{i}" for i in out.indices)
+    leds = ", ".join(f"LED{i}" for i in out.leds)
 
     def add(rid, text, cat, methods, note=None):
         reqs.append(Requirement(id=rid, text=text, category=cat, methods=methods, physical_note=note))
 
-    unused = [i for i in range(16) if i not in {x for o in spec.outputs for x in o.indices}]
+    unused = [i for i in range(16) if i not in spec.used_leds]
     if unused:
         add("R-IDLE", f"LEDs not used by the design ({len(unused)} LEDs) stay off", "output", ["simulation", "physical"])
 
@@ -189,6 +191,13 @@ def derive_requirements(spec: DesignSpec) -> list[Requirement]:
                 f"after {b.request_after}", "fsm", ["simulation", "physical"])
         if b.reset_input:
             add("R-RESET", f"{b.reset_input} returns the FSM to {b.states[0].name}", "reset", ["simulation", "physical"])
+    elif isinstance(b, SevenSegmentBehavior):
+        shown = b.digit_map(list(out.indices))
+        layout = ", ".join(f"AN{p}={'blank' if shown.get(p) is None else format(shown[p], 'X')}"
+                           for p in sorted(out.indices, reverse=True))
+        add("R-DISPLAY", f"the seven-segment display shows '{b.text}' ({layout}), one digit at a time, every digit "
+            "refreshed at least 60 times per second (no visible flicker)", "display", ["simulation"],
+            "the webcam analyser measures LEDs, not seven-segment digits; read the display by eye on the board")
     return reqs
 
 

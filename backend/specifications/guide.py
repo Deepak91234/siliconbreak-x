@@ -25,6 +25,7 @@ from .ir import (
     InputBinding,
     LedPatternBehavior,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
 )
 
@@ -101,13 +102,14 @@ class _Builder:
         return "not_tested"
 
     def add(self, title: str, instruction: str, *, actions: list[dict], observe: list[int], expected: str,
-            confirm: str, req_ids: list[str], observation_id: str | None = None, hold: bool = False) -> None:
+            confirm: str, req_ids: list[str], observation_id: str | None = None, hold: bool = False,
+            observe_ids: list[str] | None = None) -> None:
         self.steps.append({
             "id": f"s{len(self.steps) + 1}",
             "title": title,
             "instruction": instruction,
             "actions": actions,
-            "observe": [component_id("led", i) for i in observe],
+            "observe": [component_id("led", i) for i in observe] + list(observe_ids or []),
             "expected": expected,
             "confirm": confirm,
             "requirement_ids": req_ids,
@@ -311,6 +313,15 @@ class _Builder:
                      expected=f"The light returns to '{b.states[0].name}' ({lit(b.states[0].lights)}) and its timer restarts.",
                      confirm=f"'{b.states[0].name}' lasts a full {b.states[0].duration_s:g} s after release.", req_ids=["R-RESET"])
 
+    def seven_segment(self, b: SevenSegmentBehavior) -> None:
+        shown = b.digit_map(list(self.out.indices))
+        layout = " ".join("_" if shown.get(p) is None else format(shown[p], "X") for p in (3, 2, 1, 0))
+        self.functions["seg"] = f"shows '{b.text}'"
+        self.add("Read the display", "Look at the four-digit seven-segment display; no button or switch is needed.",
+                 actions=[], observe=[], observe_ids=["seg"],
+                 expected=f"The display shows '{b.text}' (digits AN3..AN0: {layout}; _ = dark), steady with no flicker.",
+                 confirm="Read it by eye: the webcam check measures LEDs, not digits.", req_ids=["R-DISPLAY"])
+
     # ------------------------------------------------------------- output
     def build(self) -> dict[str, Any]:
         b = self.b
@@ -322,6 +333,8 @@ class _Builder:
             self.led_pattern(b)
         elif isinstance(b, TrafficLightBehavior):
             self.traffic(b)
+        elif isinstance(b, SevenSegmentBehavior):
+            self.seven_segment(b)
 
         components = []
         for inp in self.spec.inputs:
@@ -333,6 +346,12 @@ class _Builder:
                 "debounce_ms": inp.debounce_ms,
             })
         for o in self.spec.outputs:
+            if o.port == "display":
+                components.append({
+                    "id": "seg", "kind": "display", "label": "7-segment display", "pin": None, "role": "output",
+                    "signal": o.name, "function": self.functions.get("seg", o.description or "display"),
+                })
+                continue
             for k, i in enumerate(o.indices):
                 cid = component_id("led", i)
                 components.append({
@@ -350,7 +369,9 @@ class _Builder:
             "summary": self.spec.summary,
             "family": self.spec.family,
             "components": components,
-            "unused_note": "Every LED not listed is held off by the trusted wrapper; the seven-segment display is blanked.",
+            "unused_note": "Every LED not listed is held off by the trusted wrapper" + (
+                "; the trusted cl_sevenseg driver multiplexes the display." if self.spec.display_output
+                else "; the seven-segment display is blanked."),
             "steps": self.steps,
             "derived_from": {
                 "spec": True,

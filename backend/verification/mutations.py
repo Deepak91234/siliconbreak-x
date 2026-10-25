@@ -184,6 +184,18 @@ def _wrapper_idle_led_on(v: str) -> str:
     return _sub1(r"(assign\s+led\[\d+\]\s*=\s*)1'b0\s*;", lambda m: f"{m.group(1)}1'b1;", v, "unused LED")
 
 
+def _wrapper_display_swap(v: str) -> str:
+    """Swap the two rightmost digit fields fed to cl_sevenseg (AN1 <-> AN0)."""
+    m = re.search(r"(_display_digits\s*=\s*\{)([^}]*)(\})", v)
+    if not m:
+        raise ValueError("no seven-segment display")
+    parts = [p.strip() for p in m.group(2).split(",")]
+    if len(parts) != 4 or parts[2] == parts[3]:
+        raise ValueError("display digit fields cannot be swapped")
+    parts[2], parts[3] = parts[3], parts[2]
+    return v[: m.start()] + m.group(1) + ", ".join(parts) + m.group(3) + v[m.end():]
+
+
 _PERIODIC = frozenset({"counter", "blinker", "led_pattern"})
 
 MUTATIONS: dict[str, Mutation] = {m.name: m for m in [
@@ -218,6 +230,8 @@ MUTATIONS: dict[str, Mutation] = {m.name: m for m in [
     Mutation("wrapper_led_stuck", "one LED driven by the core is stuck off", "wrapper",
              ALL_FAMILIES, _wrapper_led_stuck),
     Mutation("wrapper_idle_led_on", "an unused LED is lit", "wrapper", ALL_FAMILIES, _wrapper_idle_led_on),
+    Mutation("wrapper_display_swap", "two display digits are swapped", "wrapper",
+             frozenset({"seven_segment"}), _wrapper_display_swap),
 ]}
 
 

@@ -31,6 +31,7 @@ from backend.specifications.ir import (
     DesignSpec,
     LedPatternBehavior,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
     TrafficState,
 )
@@ -241,7 +242,7 @@ class BehaviourModel:
         return sum(((led >> idx) & 1) << k for k, idx in enumerate(self.out.indices))
 
     def unused_led_mask(self) -> int:
-        used = {i for o in self.spec.outputs for i in o.indices}
+        used = self.spec.used_leds
         return sum(1 << i for i in range(16) if i not in used)
 
     def fmt(self, value: int | None) -> str:
@@ -697,6 +698,66 @@ class TrafficModel(BehaviourModel):
         return visits
 
 
+# --------------------------------------------------------------------------- seven-segment display
+
+# Active-high segment patterns {g,f,e,d,c,b,a} for hex digits, written from the
+# Basys 3 reference manual independently of rtl/library/cl_sevenseg.v.
+GLYPHS: dict[int, int] = {
+    0x0: 0b0111111, 0x1: 0b0000110, 0x2: 0b1011011, 0x3: 0b1001111, 0x4: 0b1100110, 0x5: 0b1101101,
+    0x6: 0b1111101, 0x7: 0b0000111, 0x8: 0b1111111, 0x9: 0b1101111, 0xA: 0b1110111, 0xB: 0b1111100,
+    0xC: 0b0111001, 0xD: 0b1011110, 0xE: 0b1111001, 0xF: 0b1110001,
+}
+SEG_BLANK = 0x7F            # active-low cathodes all off
+MIN_FRAME_HZ = 60           # every lit digit must be refreshed at least this often (no visible flicker)
+DISPLAY_STARTUP_S = Fraction(1, 100)  # the first frame may still be settling
+
+
+def glyph_char(seg_active_low: int) -> str:
+    """The character an active-low cathode pattern shows ('?' if it is not a hex glyph)."""
+    pattern = (~seg_active_low) & 0x7F
+    if pattern == 0:
+        return " "
+    for h, g in GLYPHS.items():
+        if g == pattern:
+            return "AbCdEF"[h - 10] if h >= 10 else str(h)
+    return "?"
+
+
+class DisplayModel(BehaviourModel):
+    """Static text on the four multiplexed digits, judged at the board pins (seg/an)."""
+
+    family = "seven_segment"
+
+    def __init__(self, spec: DesignSpec, clk_hz: int):
+        super().__init__(spec, clk_hz)
+        assert isinstance(self.b, SevenSegmentBehavior)
+        self.digits = self.b.digit_map(list(self.out.indices))  # position -> hex (None = blank)
+
+    def core_value(self, led: int) -> int:
+        return 0  # the display drives no LEDs
+
+    def initial_value(self) -> int:
+        return 0
+
+    def expected_seg(self, pos: int) -> int | None:
+        """Active-low cathodes expected while digit `pos` is selected (None = must stay dark)."""
+        h = self.digits.get(pos)
+        return None if h is None else (~GLYPHS[h]) & 0x7F
+
+    def text(self) -> str:
+        return "".join(" " if self.digits.get(p) is None else glyph_char(self.expected_seg(p) or SEG_BLANK)
+                       for p in (3, 2, 1, 0))
+
+    def max_frame_cycles(self) -> int:
+        return _round_half_up(Fraction(self.clk_hz, MIN_FRAME_HZ))
+
+    def startup_cycles(self) -> int:
+        return _round_half_up(Fraction(self.clk_hz) * DISPLAY_STARTUP_S)
+
+    def fmt(self, value: int | None) -> str:
+        return f"'{self.text()}'"
+
+
 def model_for(spec: DesignSpec, clk_hz: int) -> BehaviourModel:
     b = spec.behavior
     if isinstance(b, CounterBehavior):
@@ -707,4 +768,6 @@ def model_for(spec: DesignSpec, clk_hz: int) -> BehaviourModel:
         return PatternModel(spec, clk_hz)
     if isinstance(b, TrafficLightBehavior):
         return TrafficModel(spec, clk_hz)
+    if isinstance(b, SevenSegmentBehavior):
+        return DisplayModel(spec, clk_hz)
     raise ValueError(f"no reference model for family '{spec.family}'")

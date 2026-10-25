@@ -31,6 +31,7 @@ from backend.specifications.ir import (
     DesignSpec,
     LedPatternBehavior,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
 )
 from backend.specifications.timing import param_dict
@@ -286,6 +287,8 @@ class _Generator:
             raw = self._traffic()
         elif isinstance(b, LedPatternBehavior) and b.pattern in ("mirror_inputs", "invert_inputs"):
             raw = self._static()
+        elif isinstance(b, SevenSegmentBehavior):
+            raw = self._display()
         elif isinstance(b, (CounterBehavior, BlinkerBehavior, LedPatternBehavior)):
             if not getattr(b, "rate_modes", None):
                 raise TestPlanError(f"{self.spec.family} pattern '{getattr(b, 'pattern', '')}' needs a rate mode")
@@ -297,6 +300,9 @@ class _Generator:
         if len(set(ids)) != len(ids):
             raise TestPlanError(f"duplicate scenario ids: {ids}")
         return scenarios
+
+    def _display(self) -> list[Scenario | None]:
+        return _display_scenario(self)
 
     # ======================================================================= periodic families
 
@@ -827,6 +833,20 @@ class _Generator:
             s.idle()
             out.append(s.build(end))
         return out
+
+
+def _display_scenario(gen: "_Generator") -> list[Scenario | None]:
+    m = gen.model
+    assert isinstance(m, R.DisplayModel)
+    s = _Scn(gen, "display_text", f"Display shows '{m.text()}'",
+             "No inputs: decode the multiplexed seven-segment pins (seg/an) and check every digit shows its "
+             "character, blank digits stay dark, one digit is driven at a time, and each digit is refreshed "
+             f"at least {R.MIN_FRAME_HZ} times per second.")
+    end = max(4 * m.max_frame_cycles(), m.startup_cycles() + 3 * m.max_frame_cycles())
+    s.check("display", ["R-DISPLAY"], frm=m.startup_cycles(), to=end)
+    s.idle()
+    s.focus(0, end)
+    return [s.build(end)]
 
 
 def generate_test_plan(spec: DesignSpec, clk_hz: int) -> TestPlan:

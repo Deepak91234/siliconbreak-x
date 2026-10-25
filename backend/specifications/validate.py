@@ -35,6 +35,7 @@ from backend.specifications.ir import (
     DesignSpec,
     LedPatternBehavior,
     RateMode,
+    SevenSegmentBehavior,
     TrafficLightBehavior,
     referenced_inputs,
 )
@@ -104,6 +105,8 @@ class _Validator:
             self.led_pattern(b)
         elif isinstance(b, TrafficLightBehavior):
             self.traffic_light(b)
+        elif isinstance(b, SevenSegmentBehavior):
+            self.seven_segment(b)
         self.rate_modes()
         self.input_roles()
         self.camera()
@@ -111,14 +114,14 @@ class _Validator:
     # ------------------------------------------------------------------ board / io
     def board_and_io(self) -> None:
         spec = self.spec
-        leds = [i for o in spec.outputs for i in o.indices]
+        leds = [i for o in spec.outputs for i in o.leds]
         if len(leds) > 16:
             self.add("error", "too-many-leds", f"the Basys 3 has 16 LEDs; the design drives {len(leds)}", "outputs")
         b = spec.behavior
         for k, o in enumerate(spec.outputs):
             if o.name != b.output:
                 self.add("warning", "output-not-driven",
-                         f"output '{o.name}' ({_leds(o.indices)}) is not driven by the {spec.family} behaviour "
+                         f"output '{o.name}' ({_where(o)}) is not driven by the {spec.family} behaviour "
                          "and will stay off", f"outputs[{k}]")
         used = set(referenced_inputs(b))
         for k, i in enumerate(spec.inputs):
@@ -263,6 +266,17 @@ class _Validator:
                      f"request_after '{b.request_after}' is not one of the states {[s.name for s in b.states]}",
                      "behavior.request_after")
 
+    def seven_segment(self, b: SevenSegmentBehavior) -> None:
+        out = self.spec.output(b.output)
+        if b.text.strip() == "":
+            self.add("warning", "blank-display", "the display text is all blanks, so the display stays dark", "behavior.text")
+        self.add("info", "display-not-camera", "the webcam check measures LEDs, not seven-segment digits; the display "
+                 "text is verified in simulation (decoded from the seg/an pins) and by eye on the board", "behavior")
+        if len(b.text) < len(out.indices):
+            self.add("info", "display-right-aligned",
+                     f"'{b.text}' is right-aligned on {len(out.indices)} digits; the leftmost positions stay blank",
+                     "behavior.text")
+
     # ------------------------------------------------------------------ cross-cutting
     def rate_modes(self) -> None:
         b = self.spec.behavior
@@ -329,3 +343,7 @@ class _Validator:
 
 def _leds(indices: list[int]) -> str:
     return ", ".join(f"LED{i}" for i in indices)
+
+
+def _where(o) -> str:
+    return _leds(o.indices) if o.port == "led" else "display digits " + ", ".join(f"AN{i}" for i in sorted(o.indices, reverse=True))

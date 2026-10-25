@@ -10,6 +10,8 @@ Naming contract (shared with the RTL generator and the LLM prompt):
                            (counter increment, pattern step, or blinker toggle)
     TICKS_STATE_<STATE>    cycles spent in traffic-light state <STATE>
     DEBOUNCE_<INPUT>       debounce stable-cycles for input <INPUT> (wrapper only)
+    SEG_DIGIT_CYCLES       cycles each seven-segment digit is lit per multiplex slot
+                           (wrapper only; 1 kHz digit rate, a 250 Hz flicker-free frame)
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from .ir import BlinkerBehavior, DesignSpec, TrafficLightBehavior
 
 MAX_TICKS = 2**31 - 1  # Verilog 'integer' parameters are 32-bit signed
 MIN_TICKS = 2
+SEG_DIGIT_HZ = 1000  # multiplex slots per second on the seven-segment display
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,10 @@ def timing_params(spec: DesignSpec, clk_hz: int) -> list[TimingParam]:
             out.append(
                 TimingParam(f"TICKS_STATE_{s.name.upper()}", ticks, True, f"cycles in state '{s.name}' ({s.duration_s:g} s)")
             )
+
+    if spec.display_output is not None:
+        out.append(TimingParam("SEG_DIGIT_CYCLES", max(1, _round(clk / SEG_DIGIT_HZ)), False,
+                               f"cycles per seven-segment digit slot ({SEG_DIGIT_HZ} Hz digit rate)"))
 
     for i in spec.inputs:
         cycles = _round(clk * Fraction(str(i.debounce_ms)) / 1000) if i.debounce_ms > 0 else 0

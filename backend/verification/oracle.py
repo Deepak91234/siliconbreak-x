@@ -569,6 +569,80 @@ def _fsm_duration(ctx: _Ctx, chk: CheckSpec) -> CheckResult:
                       f"({m.state_named(state).duration_s:g} s at {ctx.clk_hz} Hz)", expected=D, observed=measured)
 
 
+# --------------------------------------------------------------------------- seven-segment display
+
+
+def _pin_series(ctx: _Ctx, name: str, idle: int) -> list[tuple[int, int]]:
+    ch = list(ctx.trace.changes.get(name) or [])
+    if not ch or ch[0][0] != 0:
+        ch.insert(0, (0, idle))
+    return [(int(c), int(v)) for c, v in ch]
+
+
+def _display(ctx: _Ctx, chk: CheckSpec) -> CheckResult:
+    """Decode the multiplexed display from the seg/an pins and compare it with the spec's text.
+
+    Every interval where exactly one anode is low is attributed to that digit. A
+    digit with a character must show exactly its glyph whenever selected and be
+    selected at least once per 1/60 s; a blank digit must never light a segment;
+    two anodes low at once (ghosting) fails.
+    """
+    m = ctx.model
+    assert isinstance(m, R.DisplayModel)
+    frm, to = _rng(chk, ctx)
+    an = _pin_series(ctx, "an", 0xF)
+    seg = _pin_series(ctx, "seg", R.SEG_BLANK)
+    cuts = sorted({c for c, _ in an} | {c for c, _ in seg} | {frm, to + 1})
+    ia = isg = 0
+    slots: dict[int, list[tuple[int, int, int]]] = {p: [] for p in range(4)}
+    for a, b in zip(cuts, cuts[1:]):
+        while ia + 1 < len(an) and an[ia + 1][0] <= a:
+            ia += 1
+        while isg + 1 < len(seg) and seg[isg + 1][0] <= a:
+            isg += 1
+        lo, hi = max(a, frm), min(b - 1, to)
+        if lo > hi:
+            continue
+        av, sv = an[ia][1] & 0xF, seg[isg][1] & 0x7F
+        active = [p for p in range(4) if not (av >> p) & 1]
+        if len(active) > 1 and sv != R.SEG_BLANK:
+            return ctx.result(chk, False, f"digits {['AN%d' % p for p in active]} were selected together at cycle {lo} "
+                              "(ghosting); the display must drive one digit at a time", expected="one anode low",
+                              observed=f"an=0b{av:04b}", cycle=lo)
+        if len(active) == 1:
+            slots[active[0]].append((lo, hi, sv))
+    shown: dict[int, str] = {}
+    for p in range(4):
+        exp = m.expected_seg(p)
+        lit = [(lo, hi, v) for lo, hi, v in slots[p] if v != R.SEG_BLANK]
+        if exp is None:
+            if lit:
+                lo, _hi, v = lit[0]
+                return ctx.result(chk, False, f"digit AN{p} should be blank but showed '{R.glyph_char(v)}' at cycle {lo}",
+                                  expected="blank", observed=R.glyph_char(v), cycle=lo, seg=f"0x{v:02x}")
+            shown[p] = " "
+            continue
+        if not slots[p]:
+            return ctx.result(chk, False, f"digit AN{p} was never selected in cycles {frm}..{to}; expected "
+                              f"'{R.glyph_char(exp)}'", expected=R.glyph_char(exp), observed="never driven", cycle=frm)
+        wrong = [(lo, hi, v) for lo, hi, v in slots[p] if v != exp]
+        if wrong:
+            lo, _hi, v = wrong[0]
+            return ctx.result(chk, False, f"digit AN{p} showed '{R.glyph_char(v)}' (seg=0x{v:02x}) at cycle {lo}; "
+                              f"expected '{R.glyph_char(exp)}' (seg=0x{exp:02x})", expected=R.glyph_char(exp),
+                              observed=R.glyph_char(v), cycle=lo)
+        starts = [frm] + [lo for lo, _hi, _v in slots[p]] + [to]
+        gap = max(b - a for a, b in zip(starts, starts[1:]))
+        if gap > m.max_frame_cycles():
+            return ctx.result(chk, False, f"digit AN{p} went {gap} cycles without being refreshed; at most "
+                              f"{m.max_frame_cycles()} ({R.MIN_FRAME_HZ} Hz at {ctx.clk_hz} Hz) avoids visible flicker",
+                              expected=m.max_frame_cycles(), observed=gap, cycle=frm)
+        shown[p] = R.glyph_char(exp)
+    text = "".join(shown[p] for p in (3, 2, 1, 0))
+    return ctx.result(chk, True, f"the display shows '{text}' (AN3..AN0) throughout cycles {frm}..{to}, one digit "
+                      f"at a time, each refreshed within {m.max_frame_cycles()} cycles", expected=m.text(), observed=text)
+
+
 # --------------------------------------------------------------------------- entry point
 
 
@@ -585,6 +659,7 @@ _CHECKS: dict[str, Callable[[_Ctx, CheckSpec], CheckResult]] = {
     "change_count": _change_count,
     "fsm_sequence": _fsm_sequence,
     "fsm_duration": _fsm_duration,
+    "display": _display,
 }
 
 

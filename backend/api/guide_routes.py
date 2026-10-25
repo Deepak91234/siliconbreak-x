@@ -289,9 +289,14 @@ async def get_diagram(revision_id: str) -> dict:
     edges.append({"from": "clk", "to": state, "clock": True})
     for o in spec.outputs:
         idx = sorted(o.indices)
-        label = f"LD{idx[0]}–LD{idx[-1]}" if idx == list(range(idx[0], idx[-1] + 1)) and len(idx) > 1 else ", ".join(f"LD{i}" for i in idx)
+        if o.port == "display":
+            label = "7-segment " + "/".join(f"AN{i}" for i in reversed(idx))
+            comps = ["seg"]
+        else:
+            label = f"LD{idx[0]}–LD{idx[-1]}" if idx == list(range(idx[0], idx[-1] + 1)) and len(idx) > 1 else ", ".join(f"LD{i}" for i in idx)
+            comps = [component_id("led", i) for i in o.indices]
         nodes.append({"id": f"out:{o.name}", "column": 3, "kind": "output", "label": label, "sub": f"{o.name}[{o.width - 1}:0]" if o.width > 1 else o.name,
-                      "components": [component_id("led", i) for i in o.indices], "source": "spec"})
+                      "components": comps, "source": "spec"})
         edges.append({"from": state, "to": f"out:{o.name}", "label": o.name})
     return {
         "revision_id": revision_id, "family": spec.family,
