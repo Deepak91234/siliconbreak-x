@@ -29,6 +29,7 @@ import logging
 import re
 import time
 import traceback
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -379,6 +380,77 @@ class SecurityOrchestrator:
                        "patterns the contract requires are listed in the Security tab.") if res.ok
                       else f"Programming failed ({res.adapter}): {res.message}", kind="result" if res.ok else "error")
         await ctx.set_status("passed" if res.ok else "failed", finished=True)
+
+    # -------------------------------------------- webcam observation of the board demo
+    @staticmethod
+    def board_provenance(audit: dict, variant: str) -> dict:
+        """Is `variant` the design CircuitLoop most recently wrote to the board?
+
+        The camera cannot tell which bitstream is loaded, so observations are only
+        attributed to a variant when the last executed program approval (security or
+        regular flow) loaded exactly that variant's bitstream. A power cycle since then
+        is not detectable here; the observation's comparison with simulation shows it.
+        """
+        done = [a for a in store.list_approvals("executed") if a["kind"] == "program_fpga"]
+        last = max(done, key=lambda a: a["created_at"], default=None)
+        build = ((audit["record"].get("fpga") or {}).get(variant) or {}).get("build") or {}
+        sha = build.get("bitstream_sha256")
+        if last is None:
+            return {"confirmed": False, "reason": "CircuitLoop has not programmed the board"}
+        d = last.get("details") or {}
+        out = {"approval_id": last["id"], "at": last.get("decided_at") or last["created_at"],
+               "bitstream_sha256": d.get("bitstream_sha256"), "audit_id": d.get("audit_id"), "variant": d.get("variant")}
+        ok = bool(sha) and d.get("bitstream_sha256") == sha and d.get("audit_id") == audit["id"] and d.get("variant") == variant
+        out["confirmed"] = ok
+        if not ok:
+            what = (f"{d.get('variant')} of audit {d.get('audit_id')}" if d.get("audit_id")
+                    else "a design from the regular CircuitLoop flow")
+            out["reason"] = f"the last design CircuitLoop programmed is {what}; program this variant first"
+        return out
+
+    def start_board_observation(self, audit_id: str, variant: str) -> dict:
+        from backend.api import vision_service
+        from backend.security.board_vision import BoardObservationSession
+
+        audit = store.get_security_audit(audit_id)
+        if audit is None:
+            raise KeyError(audit_id)
+        case = get_case(audit.get("case_id") or "")
+        if case is None or case.board is None or not case.board.demo:
+            raise AuditError("this case has no Basys 3 demo to observe")
+        info = next((v for v in self.fpga_variants(audit) if v["variant"] == variant), None)
+        if info is None:
+            raise AuditError(f"variant {variant!r} is not buildable")
+        prov = self.board_provenance(audit, variant)
+        if not prov["confirmed"]:
+            raise AuditError(f"cannot attribute camera evidence to {variant}: {prov['reason']}")
+        sim = ((audit["record"].get("fpga") or {}).get(variant) or {}).get("board_sim") or {}
+        simulated = {s["id"]: s["simulated"] for s in sim.get("steps", []) if s.get("simulated")}
+        if len(simulated) != len(case.board.demo):
+            raise AuditError("run the board-level simulation for this variant first (Simulate + build)")
+        sid = "bo_" + uuid.uuid4().hex[:10]
+        evidence = Path(audit["dir"]) / "fpga" / variant / "camera" / sid
+        sess = BoardObservationSession(sid, audit_id=audit_id, variant=variant, variant_label=info["label"],
+                                       steps=list(case.board.demo), simulated=simulated, programmed=prov,
+                                       evidence_dir=evidence)
+        vision_service.register(sid, sess, project_id=audit.get("project_id"), kind="security", audit_id=audit_id)
+        return vision_service.state(sid)
+
+    async def finish_board_observation(self, session_id: str) -> dict:
+        from backend.api import vision_service
+
+        entry = vision_service.get(session_id)
+        sess = entry["session"]
+        res = await asyncio.to_thread(sess.finish)
+        rel = str(sess.evidence_dir.relative_to(Path(store.get_security_audit(sess.audit_id)["dir"])))
+        res = {**res, "dir": rel, "at": now()}
+
+        def put(r: dict) -> None:
+            v = r.setdefault("fpga", {}).setdefault(sess.variant, {})
+            v["observations"] = [o for o in v.get("observations", []) if o.get("session_id") != session_id] + [res]
+        await self._record(sess.audit_id, put)
+        await vision_service.publish(session_id)
+        return res
 
     # -------------------------------------------- repository / project audits
     async def start_repo_audit(self, repo_id: str, files: list[str] | None, *, investigator: str | None = None) -> dict:

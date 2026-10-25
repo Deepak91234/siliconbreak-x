@@ -202,11 +202,44 @@ export interface FpgaVariantState {
             utilization: Record<string, { used?: number; available?: number }> | null; bitstream_path: string | null;
             bitstream_sha256: string | null; bitstream_bytes: number | null; duration_s: number; vivado_version: string | null } | null;
   programs?: Array<{ at: number; ok: boolean; adapter: string; state: string; message: string; bitstream_sha256: string }>;
+  observations?: BoardObservation[];
+}
+
+/** What CircuitLoop last wrote to the board; camera evidence is only attributed to a confirmed variant. */
+export interface Provenance {
+  confirmed: boolean; reason?: string; approval_id?: string; at?: number;
+  bitstream_sha256?: string | null; audit_id?: string | null; variant?: string | null;
+}
+
+export interface ObservedStep {
+  step_id: string; title: string; status: "observed" | "inconclusive" | "not_run";
+  set?: Record<string, number>; press?: string | null; duration_s?: number; frames?: number;
+  expected: string; expected_text?: string; simulated: string | null; observed: string | null;
+  matches_contract?: boolean | null; matches_simulation?: boolean | null; reasons?: string[]; lit?: number[]; snapshot?: string;
+}
+
+export type ObservationVerdict = "violation_observed" | "contract_met" | "unexpected" | "inconclusive";
+
+export interface BoardObservation {
+  kind: "board_observation"; session_id: string; audit_id: string; variant: string; variant_label: string;
+  verdict: ObservationVerdict; summary: string; steps: ObservedStep[]; programmed: Provenance;
+  frames_recorded: number; method: string; dir?: string; at?: number;
+}
+
+export interface CameraSession {
+  id: string; kind: "board_observation"; status: "setup" | "ready" | "recording" | "finished";
+  audit_id: string; variant: string; variant_label: string;
+  roi: { leds: Array<{ led_index: number; x: number; y: number; w: number; h: number }> } | null;
+  steps: Array<DemoStep & { simulated: string | null }>;
+  active_step: string | null; active_frames: number; step_results: Record<string, ObservedStep>; result: BoardObservation | null;
+  live: { t_ms?: number; states?: Record<string, number | null>; levels?: Record<string, number>; quality?: Record<string, unknown> };
+  frames_recorded: number; programmed: Provenance;
 }
 
 export interface FpgaInfo {
   available: boolean;
   variants: Array<{ variant: string; label: string; kind: "vulnerable" | "agent" | "reference" }>;
+  provenance: Record<string, Provenance>;
   demo: DemoStep[];
   mapping: Array<{ control: string; signal: string; text: string }>;
   state: Record<string, FpgaVariantState> & { loaded?: { variant: string; at: number } };
@@ -325,6 +358,18 @@ export const securityApi = {
     request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/build`, { method: "POST" }),
   fpgaProgram: (id: string, variant: string) =>
     request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/program`, { method: "POST" }),
+  cameraCreate: (id: string, variant: string) =>
+    request<CameraSession>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/camera`, { method: "POST" }),
+  camera: (sid: string, signal?: AbortSignal) => request<CameraSession>(`/api/security/camera/${enc(sid)}`, { signal }),
+  cameraAutoRoi: (sid: string, box: [number, number, number, number]) =>
+    request<CameraSession>(`/api/security/camera/${enc(sid)}/auto-roi`, { method: "POST", body: { box } }),
+  cameraStart: (sid: string, stepId: string) =>
+    request<CameraSession>(`/api/security/camera/${enc(sid)}/step`, { method: "POST", body: { action: "start", step_id: stepId } }),
+  cameraEnd: (sid: string) =>
+    request<{ step: ObservedStep; session: CameraSession }>(`/api/security/camera/${enc(sid)}/step`, { method: "POST", body: { action: "end" } }),
+  cameraFinish: (sid: string) =>
+    request<BoardObservation>(`/api/security/camera/${enc(sid)}/finish`, { method: "POST", timeoutMs: 60_000 }),
+  cameraImageUrl: (id: string, path: string) => `/api/security/audits/${enc(id)}/camera-image?path=${enc(path)}`,
   aiBudget: () => request<AIBudget>("/api/ai/budget"),
   setLiveAI: (enabled: boolean) => request<AIBudget>("/api/ai/live", { method: "POST", body: { enabled } }),
   benchEstimate: (body: { case_ids?: string[]; arms?: string[]; max_attempts?: number }) =>

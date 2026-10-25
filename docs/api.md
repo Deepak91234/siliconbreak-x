@@ -166,7 +166,10 @@ Non-2xx responses: `{"detail": "human readable message"}`. 404 unknown id, 409 s
 ## SiliconBreak X (security) endpoints
 
 Documented in [siliconbreak.md](siliconbreak.md#api): `/api/security/health`, `/api/security/cases`,
-`/api/security/audits` (create, list, get, repair, file, sources, waveform) and `/api/bench/runs`.
+`/api/security/audits` (create, list, get, repair, file, sources, waveform), the Basys 3 build/program/webcam routes
+under `/api/security/audits/{id}/fpga/...` and `/api/security/camera/{sid}`, and `/api/bench/runs`. Board observation
+sessions share `/ws/vision/{sid}` with design verification but are not listed by `/api/vision/sessions` and are refused
+by its routes.
 Audits are ordinary runs (`trigger: "security_audit"` or `"security_repair"`) whose stages are
 `contract, index, investigate, reproduce, formal, repair, retest, evidence`; the event stream adds
 `security.updated` `{audit}` and `bench.updated` `{bench}`. Run statuses for audits:

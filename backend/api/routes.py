@@ -419,9 +419,12 @@ async def create_vision(req: VisionCreate) -> dict:
 
 def _vs(session_id: str) -> Any:
     try:
-        return vision_service.get(session_id)["session"]
+        entry = vision_service.get(session_id)
     except KeyError:
         raise _404("vision session")
+    if entry.get("kind", "design") != "design":  # security board observations have their own routes
+        raise _404("vision session")
+    return entry["session"]
 
 
 @router.get("/vision/sessions/{session_id}")

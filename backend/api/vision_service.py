@@ -30,9 +30,15 @@ def create(revision_id: str):
     return state(row["id"])
 
 
+def register(session_id: str, sess, *, project_id: str | None, kind: str, **extra) -> None:
+    """Add a session of another kind (e.g. a security-demo board observation) so /ws/vision streams to it."""
+    _sessions[session_id] = {"session": sess, "revision_id": None, "project_id": project_id, "kind": kind, **extra}
+
+
 def list_for_revision(revision_id: str | None = None) -> list[dict]:
-    """Live sessions held by this backend process (sessions do not survive a restart)."""
-    return [state(sid) for sid, e in _sessions.items() if revision_id is None or e["revision_id"] == revision_id]
+    """Live design-verification sessions held by this backend process (sessions do not survive a restart)."""
+    return [state(sid) for sid, e in _sessions.items()
+            if e.get("kind", "design") == "design" and (revision_id is None or e["revision_id"] == revision_id)]
 
 
 def get(session_id: str):
@@ -52,7 +58,9 @@ def state(session_id: str) -> dict:
 
 async def publish(session_id: str) -> dict:
     st = state(session_id)
-    await bus.emit("vision.updated", project_id=get(session_id)["project_id"], session=st)
+    entry = get(session_id)
+    if entry.get("kind", "design") == "design":  # other kinds report through their own records
+        await bus.emit("vision.updated", project_id=entry["project_id"], session=st)
     return st
 
 

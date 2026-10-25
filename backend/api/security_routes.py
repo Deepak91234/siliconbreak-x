@@ -6,13 +6,16 @@ change to an audit record is also published as a `security.updated` event.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import Path as Path_
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
+from backend.api import vision_service
 from backend.core.process import PathOutsideWorkspace, ensure_within
 from backend.security import health
 from backend.security.cases import get_case, list_cases
@@ -182,7 +185,9 @@ VARIANT_RE = r"^(vulnerable|attempt-[0-9]{1,3})$"
 async def audit_fpga(audit_id: str) -> dict:
     a = _audit(audit_id)
     c = get_case(a["case_id"] or "")
-    return {"available": bool(c and c.board), "variants": so.fpga_variants(a),
+    variants = so.fpga_variants(a)
+    return {"available": bool(c and c.board), "variants": variants,
+            "provenance": {v["variant"]: so.board_provenance(a, v["variant"]) for v in variants},
             "demo": [d.model_dump() for d in (c.board.demo if c and c.board else [])],
             "mapping": (c.board.mapping if c and c.board else []), "state": a["record"].get("fpga") or {}}
 
@@ -205,6 +210,84 @@ async def fpga_program(audit_id: str, variant: str = Path_(..., pattern=VARIANT_
         raise HTTPException(404, "audit not found")
     except AuditError as e:
         raise HTTPException(400, str(e))
+
+
+# ------------------------------------------------------------------ webcam observation of the board demo
+
+class CameraBoxRequest(BaseModel):
+    box: tuple[float, float, float, float]      # normalised [x, y, w, h] around LED15..LED0
+
+
+class CameraStepRequest(BaseModel):
+    action: Literal["start", "end"]
+    step_id: Optional[str] = Field(default=None, max_length=16)
+
+
+def _camera(session_id: str):
+    try:
+        entry = vision_service.get(session_id)
+    except KeyError:
+        raise HTTPException(404, "camera session not found (sessions do not survive a backend restart)")
+    if entry.get("kind") != "security":
+        raise HTTPException(404, "camera session not found")
+    return entry["session"]
+
+
+@router.post("/security/audits/{audit_id}/fpga/{variant}/camera")
+async def camera_create(audit_id: str, variant: str = Path_(..., pattern=VARIANT_RE)) -> dict:
+    try:
+        return so.start_board_observation(audit_id, variant)
+    except KeyError:
+        raise HTTPException(404, "audit not found")
+    except AuditError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.get("/security/camera/{session_id}")
+async def camera_get(session_id: str) -> dict:
+    _camera(session_id)
+    return vision_service.state(session_id)
+
+
+@router.post("/security/camera/{session_id}/auto-roi")
+async def camera_auto_roi(session_id: str, req: CameraBoxRequest) -> dict:
+    s = _camera(session_id)
+    frame = vision_service.last_frame(session_id)
+    if frame is None:
+        raise HTTPException(409, "no camera frame received yet")
+    try:
+        s.set_roi(await asyncio.to_thread(s.auto_roi, frame, tuple(req.box)))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return vision_service.state(session_id)
+
+
+@router.post("/security/camera/{session_id}/step")
+async def camera_step(session_id: str, req: CameraStepRequest) -> dict:
+    s = _camera(session_id)
+    try:
+        if req.action == "start":
+            if not req.step_id:
+                raise HTTPException(422, "step_id required")
+            s.start_step(req.step_id)
+            return vision_service.state(session_id)
+        return {"step": await asyncio.to_thread(s.end_step), "session": vision_service.state(session_id)}
+    except (KeyError, RuntimeError) as e:
+        raise HTTPException(409, str(e).strip("'\""))
+
+
+@router.post("/security/camera/{session_id}/finish")
+async def camera_finish(session_id: str) -> dict:
+    _camera(session_id)
+    return await so.finish_board_observation(session_id)
+
+
+@router.get("/security/audits/{audit_id}/camera-image")
+async def camera_image(audit_id: str, path: str = Query(..., max_length=300)) -> FileResponse:
+    p = _audit_path(_audit(audit_id), path)
+    if p.suffix != ".jpg" or "/camera/" not in f"/{path}":
+        raise HTTPException(415, "only camera snapshots can be fetched here")
+    return FileResponse(p, media_type="image/jpeg")
 
 
 @router.get("/security/audits/{audit_id}/file")

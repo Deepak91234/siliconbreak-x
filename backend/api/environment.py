@@ -11,8 +11,18 @@ from backend.core.process import run_command
 
 _cache: dict | None = None
 _cache_at = 0.0
-_lock = asyncio.Lock()
+_lock: asyncio.Lock | None = None
+_lock_loop: asyncio.AbstractEventLoop | None = None
 CACHE_S = 10.0
+
+
+def _loop_lock() -> asyncio.Lock:
+    """One lock per event loop: a lock left held by a loop that closed (tests) must not block the next one."""
+    global _lock, _lock_loop
+    loop = asyncio.get_running_loop()
+    if _lock is None or _lock_loop is not loop:
+        _lock, _lock_loop = asyncio.Lock(), loop
+    return _lock
 
 
 async def _tool_version(path: str | None, args: list[str]) -> dict:
@@ -25,7 +35,7 @@ async def _tool_version(path: str | None, args: list[str]) -> dict:
 
 async def collect(force: bool = False) -> dict:
     global _cache, _cache_at
-    async with _lock:
+    async with _loop_lock():
         if not force and _cache is not None and time.time() - _cache_at < CACHE_S:
             return _cache
         from backend.programmer.manager import hardware

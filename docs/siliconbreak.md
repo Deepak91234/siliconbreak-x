@@ -86,8 +86,37 @@ still match the verified hashes) runs:
    container" request is raised; nothing starts without your click, and if declined the stages report *unavailable*.
 
 `POST .../fpga/{variant}/program` detects the board, then raises the existing SHA-bound `program_fpga` approval; the hardware
-manager re-verifies the approval and the file hash before writing SRAM (never flash). The UI never records what the LEDs
-physically showed; that is your observation on the board.
+manager re-verifies the approval and the file hash before writing SRAM (never flash). What the LEDs physically showed is
+only recorded through webcam evidence (next section); otherwise it is your own observation.
+
+### Webcam evidence of the demo steps
+
+**Verify with webcam** on a variant records what the board's LEDs actually showed at each demo step, as physical evidence
+next to the contract and the board-level simulation (`backend/security/board_vision.py`, UI `frontend/src/security/BoardCamera.tsx`).
+
+- **Attribution.** A camera cannot tell which bitstream is loaded, so a session can only be opened for the variant whose
+  bitstream CircuitLoop programmed last: the most recent executed `program_fpga` approval (security or regular flow) must name
+  this audit, this variant and this build's SHA-256. Otherwise the request is refused (409) with the reason. A power cycle since
+  programming is not detectable here; it shows up as a mismatch with the simulation (verdict *unexpected*).
+- **Steps.** A dark reference (no button held, every LED off; the controller clears its outputs when `read_req` drops), then
+  D1-D4 from the case. For each step you set the switches, press **Capture** and hold BTNU: 2 s to get a hand on the button,
+  then at least 3 s of recording, extended (up to 9 s more) until 24 frames have reached the backend, because a slow machine or
+  a throttled background tab streams fewer frames.
+- **Measurement.** The existing webcam pipeline: frames stream over `/ws/vision/{id}`; one box around LED15..LED0 is split into
+  16 cells and snapped to the LEDs; per-LED green level in each frame; camera-motion and darkness rejection. At **Finish** every
+  step is re-read with on/off levels calibrated over the whole session (LEDs that never light borrow the levels of LEDs that
+  did), ignoring the first 400 ms of each step. An LED counts only with at least 6 classified frames and 75% agreement; a step
+  with any unread LED, or shorter than 1 s, is *inconclusive*, never guessed.
+- **Verdict.** *violation_observed* (every step read, all match this variant's simulation, at least one breaks the contract),
+  *contract_met* (all match the contract), *unexpected* (the board differs from the simulation of the bitstream it should be
+  running) or *inconclusive* (a step missing or unreadable).
+- **Evidence.** `fpga/<variant>/camera/<session>/observation.json`, `frames.csv` (per-frame levels of all 16 LEDs) and
+  `snapshots/<step>_<n>.jpg` (a frame from inside the step window with the cells drawn green/grey for the reading). The
+  result is appended to `record.fpga.<variant>.observations` and shown under the variant in the Security tab.
+
+Tested with the synthetic board renderer (vulnerable leak observed, patched contract met, board/simulation mismatch, missing
+step, dark scene, short capture) and through the real HTTP + WebSocket API; checked in the dashboard with a canvas standing in
+for the webcam. Not yet run with the real webcam on the real board.
 
 ## AI credit protection
 
@@ -225,9 +254,16 @@ GET  /api/security/audits/{id}/waveform?path=&start=&end=&signals=
 POST /api/security/audits                {repo_id, files?} | {project_id, revision_id?}
 POST /api/security/repos                 {url, ref?, subdir?}
 GET  /api/security/repos, /api/security/repos/{id}, /api/security/repos/{id}/file?path=
-GET  /api/security/audits/{id}/fpga
+GET  /api/security/audits/{id}/fpga                 variants, demo steps, state, provenance (what CircuitLoop last programmed)
 POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/build
 POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/program
+POST /api/security/audits/{id}/fpga/{vulnerable|attempt-N}/camera   webcam session (409 unless that variant is loaded)
+GET  /api/security/camera/{sid}
+POST /api/security/camera/{sid}/auto-roi             {box: [x, y, w, h]} normalised, around LED15..LED0
+POST /api/security/camera/{sid}/step                 {action: start, step_id} | {action: end}
+POST /api/security/camera/{sid}/finish               -> observation (also stored in the audit record)
+GET  /api/security/audits/{id}/camera-image?path=     snapshot JPEGs under fpga/*/camera/
+WS   /ws/vision/{sid}                                 frames: [float64 LE t_ms][JPEG], as for design verification
 GET  /api/bench/cases
 POST /api/bench/runs                     {case_ids?, arms?, max_attempts?}
 GET  /api/bench/runs, /api/bench/runs/{id}
@@ -266,7 +302,9 @@ FACTORY_API_KEY=...        # Factory Droid; also install the droid CLI so `droid
 4. Back in the audit, **Basys 3 before / after → Simulate + build** on *before* and *after*: the demo-step table shows D1 leaking
    `0xA5` on the vulnerable board top and denying on the fixed one (simulation). With Vivado running and the board connected,
    **Program…** each one (approval) and press BTNU with SW1 off, SW2 on, SW3 on: the vulnerable board lights LED15 and the
-   secret on LED7–LED0, the fixed board lights LED14 only.
+   secret on LED7–LED0, the fixed board lights LED14 only. After each programming, **Verify with webcam** records it:
+   frame the LEDs, capture the dark reference and D1-D4, **Finish**: *violation observed on the board* before, *contract met
+   on the board* after.
 5. Optional: **Audit a public repository → Example: OpenTitan rv_dm → Import → Audit**: pinned SHA, the files actually read,
    and the honest "suspected only / not a proof" outcome.
 
@@ -287,5 +325,6 @@ Not yet run (needs you):
 | Factory Droid repair | `droid` CLI 0.249.0 is now installed (`~/.local/bin/droid`); no `FACTORY_API_KEY` | log the CLI in or set `FACTORY_API_KEY`, then **Repair with Factory Droid** (explicit click). Automatic repairs during an audit use Droid only when `FACTORY_API_KEY` is set. The attempt shows the session id, trace and refused actions |
 | Baseline vs assisted comparison | needs a model key | **Run SiliconBench** after adding a key |
 | Basys 3 before/after: Vivado build | done in the isolated `siliconbreak_vivado` (see above) | rebuild from the Security tab after an agent repair to get an agent-patched *after* |
-| Basys 3 before/after: programming | board not connected | plug in the Basys 3, **Program…**, approve, then run demo steps D1–D4 on the board and compare with the listed LED patterns |
+| Basys 3 before/after: programming | done (see the end-to-end run above) | |
+| Webcam evidence on the real board | not run yet | program a variant, **Verify with webcam**, capture the dark reference and D1-D4, **Finish** |
 | Historical cases from public repositories | no case manifest with trusted tests written yet | a pinned historical case needs a contract, a trusted testbench and its fix commit; repository audits today stop at *suspected* |

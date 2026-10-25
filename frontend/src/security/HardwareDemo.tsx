@@ -5,17 +5,19 @@
  *                           with the LED pattern the contract requires. Simulation only.
  *   Vivado build            the existing batch flow in the user's container
  *   program                 the existing SHA-bound approval; the board must be connected
- *
- * A physical result is never shown here: the board's LEDs are what you look at.
+ *   webcam evidence         optional: the LEDs the camera saw at each demo step, for the variant
+ *                           CircuitLoop just programmed (BoardCamera); nothing physical is inferred
  */
 
 import { useState } from "react";
 import { errorMessage } from "../api/client";
 import { securityApi, type BoardSimStep, type FpgaInfo, type SecurityAudit } from "../api/security";
-import { Button, Card, ErrorNote, Pill, cx } from "../components/ui";
+import { Button, Card, Collapsible, ErrorNote, Pill, cx } from "../components/ui";
+import { fmtDateTime } from "../lib/format";
 import { toast } from "../lib/toast";
 import { useResource } from "../lib/useResource";
 import { useAppState } from "../store/store";
+import { BoardCamera, ObservationTable, VERDICT } from "./BoardCamera";
 
 function Leds({ hex }: { hex: string }) {
   const v = parseInt(hex, 16);
@@ -33,6 +35,7 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
   const version = JSON.stringify(audit.record.fpga ?? {}) + audit.record.repairs.length;
   const res = useResource<FpgaInfo>(audit.id, version, (sig) => securityApi.fpga(audit.id, sig));
   const [busy, setBusy] = useState<string | null>(null);
+  const [camera, setCamera] = useState<string | null>(null);
   const info = res.data;
   if (res.error) return <ErrorNote error={res.error} onRetry={res.reload} />;
   if (!info || !info.available) return null;
@@ -78,6 +81,12 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
                         onClick={() => act(`p:${v.variant}`, () => securityApi.fpgaProgram(audit.id, v.variant))}>
                   Program…
                 </Button>
+                <Button size="sm" variant="secondary" disabled={!info.provenance?.[v.variant]?.confirmed || camera !== null}
+                        title={info.provenance?.[v.variant]?.confirmed ? "record the LEDs the board shows at each demo step"
+                          : info.provenance?.[v.variant]?.reason ?? "program this variant first"}
+                        onClick={() => setCamera(v.variant)}>
+                  Verify with webcam
+                </Button>
               </div>
               <div className="space-y-2 px-3 py-2 text-xs">
                 {st?.board_sim ? <BoardSim steps={st.board_sim.steps} note={st.board_sim.note} message={st.board_sim.message} />
@@ -94,6 +103,20 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
                     Programmed via {p.adapter}: {p.ok ? "done" : p.state} · {p.message}
                   </p>
                 ))}
+                {(st?.observations ?? []).slice(-1).map((o) => (
+                  <Collapsible key={o.session_id} title={
+                    <span className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-faint">Webcam evidence</span>
+                      <Pill tone={VERDICT[o.verdict].tone}>{VERDICT[o.verdict].label}</Pill>
+                      <span className="text-muted">{o.at ? fmtDateTime(o.at) : ""}</span>
+                      {(st?.observations?.length ?? 0) > 1 && <span className="text-faint">latest of {st!.observations!.length}</span>}
+                    </span>}>
+                    <div className="space-y-1.5 p-2">
+                      <p className="text-xs">{o.summary}</p>
+                      <ObservationTable obs={o} auditId={audit.id} />
+                    </div>
+                  </Collapsible>
+                ))}
               </div>
             </div>
           );
@@ -101,7 +124,13 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
       </div>
       {info.state.loaded && (
         <p className="mt-2 text-xs text-ok">Last programmed: {info.variants.find((x) => x.variant === info.state.loaded!.variant)?.label}. What the
-          board shows is a physical observation for you to make; it is not recorded here.</p>
+          board shows is only recorded through “Verify with webcam”; otherwise it is your own observation.</p>
+      )}
+      {camera && (
+        <div className="mt-3">
+          <BoardCamera auditId={audit.id} variant={camera} label={info.variants.find((x) => x.variant === camera)?.label ?? camera}
+                       onClose={() => { setCamera(null); res.reload(); }} />
+        </div>
       )}
     </Card>
   );
