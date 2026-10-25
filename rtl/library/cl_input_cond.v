@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: input conditioner = 2-flop synchronizer
+// SiliconBreak X preverified library: input conditioner = 2-flop synchronizer
 // followed by an optional debouncer. STABLE_CYCLES = 0 disables debouncing
 // (synchronization is always applied).
 `default_nettype none

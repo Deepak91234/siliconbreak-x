@@ -28,7 +28,7 @@ SCHEDULE = [("calibrate", 0.2, 4.0), ("O-RATE-normal", 4.0, 12.0), ("O-RATE-fast
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     from backend.core import config
     from backend.storage import store
@@ -110,11 +110,11 @@ def test_demo1_camera_verification_over_websocket(client):
     assert result["status"] == "passed", result["summary"]
     ratio = next(o for o in result["observations"] if o["id"] == "O-RATIO")
     assert ratio["status"] == "passed" and 2.85 <= ratio["measured"]["ratio"] <= 3.15
-    assert result["programmed_by_circuitloop"] is False
+    assert result["programmed_by_siliconbreak"] is False
 
     rev = c.get(f"/api/revisions/{rid}").json()
     assert rev["verification"]["status"] == "passed"
-    assert rev["status"] == "sim_passed"  # not 'verified': CircuitLoop never programmed this revision
+    assert rev["status"] == "sim_passed"  # not 'verified': SiliconBreak X never programmed this revision
     run = c.get(f"/api/runs/{run['id']}").json()
     assert run["status"] == "passed_sim_only"  # an unattributed camera verdict does not upgrade the run
     verify = next(s for s in run["stages"] if s["key"] == "verify")

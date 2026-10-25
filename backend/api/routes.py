@@ -491,6 +491,6 @@ async def get_file(path: str):
         p = ensure_within(root / path, root)
     except PathOutsideWorkspace:
         raise HTTPException(403, "path outside runs directory")
-    if not p.is_file() or p.suffix in (".sqlite3", ".sqlite3-wal", ".sqlite3-shm") or p.name.startswith("circuitloop.sqlite3"):
+    if not p.is_file() or p.suffix in (".sqlite3", ".sqlite3-wal", ".sqlite3-shm") or p.name.startswith("siliconbreak.sqlite3"):
         raise _404("file")
     return FileResponse(p, filename=p.name)

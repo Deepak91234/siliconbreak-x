@@ -2,7 +2,7 @@
  * Webcam evidence for the Basys 3 security demo: the LEDs the board actually showed
  * at each demo step, measured from camera frames by the backend's LED analyser.
  *
- * Only a variant CircuitLoop itself just programmed can be observed (the camera cannot
+ * Only a variant SiliconBreak X itself just programmed can be observed (the camera cannot
  * tell which bitstream is loaded). Flow: start a session -> camera on, frames stream to
  * /ws/vision/{id} -> draw a box around LED15..LED0 -> for each step set the switches,
  * hold the button and press Capture -> Finish stores the per-step observations, the

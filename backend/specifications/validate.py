@@ -1,7 +1,7 @@
 """Board-capability and consistency validation for a DesignSpec.
 
 `ir.py` enforces structure (types, ranges, references). This module answers the
-next question: can CircuitLoop actually build, simulate and observe this design
+next question: can SiliconBreak X actually build, simulate and observe this design
 on a Basys 3? Findings are graded:
 
   error    the pipeline must not continue (the design cannot be generated,
@@ -76,7 +76,7 @@ def _sim_clk_hz() -> int:
 
 
 def validate_spec(spec: DesignSpec, sim_clk_hz: int | None = None) -> ValidationReport:
-    """Validate `spec` against the Basys 3 and the CircuitLoop toolchain."""
+    """Validate `spec` against the Basys 3 and the SiliconBreak X toolchain."""
     v = _Validator(spec, sim_clk_hz or _sim_clk_hz())
     v.run()
     return ValidationReport(ok=not any(i.severity == "error" for i in v.issues), issues=v.issues)

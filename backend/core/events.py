@@ -31,7 +31,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-log = logging.getLogger("circuitloop.events")
+log = logging.getLogger("siliconbreak.events")
 
 # Pipeline stages in display order. Keys are part of the API contract.
 STAGES: list[tuple[str, str]] = [

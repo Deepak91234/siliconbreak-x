@@ -4,8 +4,8 @@ A variant is the case's vulnerable source, or the patched copy from a repair
 attempt that the trusted verifier accepted (an agent patch, or the human
 reference fix, labelled as such). For each variant:
 
-  board_sim  the full board top (trusted wrapper + CircuitLoop library + the
-             variant's RTL) runs the case's physical demo sequence in CircuitLoop's
+  board_sim  the full board top (trusted wrapper + SiliconBreak X library + the
+             variant's RTL) runs the case's physical demo sequence in SiliconBreak X's
              generic Verilator harness, with debounce shortened by parameter. Each
              step's simulated LED pattern is compared with the pattern the contract
              requires. This is simulation, never a hardware observation.

@@ -1,4 +1,4 @@
-# CircuitLoop status (2026-10-23)
+# SiliconBreak X status (2026-10-23)
 
 ## Verified on this Mac
 
@@ -19,7 +19,7 @@
 ## SiliconBreak X (security extension, branch feature/siliconbreak-x)
 
 Verified with real Verilator 5.052 and Yosys 0.69: three security cases with valid harnesses (vulnerable fails its security tests, reference passes everything, formal counterexample then proof); the full audit pipeline through the API and the Security tab (offline rules, reproduction, formal, evidence, harness validation); SiliconBench from the UI (harness 3/3, reproduction 3/3, formal 3/3, offline-rules detection 1/3; model and Droid arms "not run" without keys). Bitdeer, Claude and Factory Droid paths are implemented and unit-tested with fakes but have not run against the real services. P1: public-repository import at a pinned commit (verified live against OpenTitan `rv_dm`), repository and design audits that stay at *suspected*, and Basys 3 before/after builds with a board-level simulation of the demo sequence (verified); both demo bitstreams (vulnerable and reference fix) are built in an isolated `siliconbreak_vivado` container that mounts only a dedicated folder and the Vivado install read-only (timing met, WNS +5.5/+5.1 ns); the full loop then ran on the real board: AI finding, independent reproduction, Factory Droid repair verified 12/12 + formal, both bitstreams programmed with approval, and the user observed the leak on the vulnerable design and its absence on the patched one. Webcam evidence of the demo steps
-(per-step LED readings attributed only to the bitstream CircuitLoop last programmed, with snapshots and per-frame levels) is
+(per-step LED readings attributed only to the bitstream SiliconBreak X last programmed, with snapshots and per-frame levels) is
 implemented and tested with synthetic frames and in the dashboard; not yet run with the real webcam on the board. Details and remaining work: [siliconbreak.md](siliconbreak.md).
 
 ## Dashboard (redesign, browser-validated)
@@ -41,7 +41,7 @@ Modes and provenance: **Preview** uses the bundled example specs with highlights
 ## Not yet tested (needs you)
 
 1. **LLM path.** Put `ANTHROPIC_API_KEY=...` in `.env`, then run `.venv/bin/python scripts/llm_smoke.py` (makes real, billed calls). Then try Demo 1 in the dashboard. The revision should show `interpreter: llm:claude-opus-5-5`. Then try fault injection: repair should run instead of showing `unavailable`.
-2. **Board detection and programming.** Your `start_container.sh` loop is running, so `xvcd` will claim the board's JTAG within about 2 s of plugging it in. CircuitLoop will then use the **hw_server** adapter, which is implemented but has never run against a real board:
+2. **Board detection and programming.** Your `start_container.sh` loop is running, so `xvcd` will claim the board's JTAG within about 2 s of plugging it in. SiliconBreak X will then use the **hw_server** adapter, which is implemented but has never run against a real board:
    * Plug in the board, open the Hardware tab, and click **Detect**. It takes 60–90 s because it starts a Vivado batch session. The state should become `connected` with idcode `0x0362d093`. (With no board it already reports `no_board` correctly.)
    * Click **Program FPGA**, then approve in the chat. The LEDs should start counting.
    * To test the native openFPGALoader path instead, stop the launcher (Ctrl+C in its terminal; that also stops the GUI container), plug in the board, and Detect again.
@@ -49,7 +49,7 @@ Modes and provenance: **Preview** uses the bundled example specs with highlights
 
 ## Known limitations
 
-* A camera verdict is attributed to a revision (and can upgrade its run to `passed`) only if CircuitLoop programmed that revision; otherwise it is stored with `programmed_by_circuitloop: false`.
+* A camera verdict is attributed to a revision (and can upgrade its run to `passed`) only if SiliconBreak X programmed that revision; otherwise it is stored with `programmed_by_siliconbreak: false`.
 * Mutation-based fault injection is written against the template generator's signal names, so on LLM-written cores most mutations report "does not apply" (`stuck_output` and `invert_output` work on any core).
 * The Camera tab cannot resume a live session after a backend restart (sessions are in memory; finished results are stored).
 * The board drawing follows the real component order, labels and arrangement, but positions approximate the board drawing; they are not CAD data.

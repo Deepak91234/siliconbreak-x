@@ -55,7 +55,7 @@ function VivadoActions({ env }: { env: Environment }) {
   const v = env.vivado;
   const [busy, setBusy] = useState(false);
   const canStart = !v.ready && (v.can_start_headless || !v.docker_daemon);
-  const managedRunning = v.containers?.some((c) => c.managed_by_circuitloop && c.running);
+  const managedRunning = v.containers?.some((c) => c.managed_by_siliconbreak && c.running);
   const run = async (fn: () => Promise<unknown>, ok: (r: never) => string) => {
     setBusy(true);
     try {
@@ -133,7 +133,7 @@ function SystemStatus() {
                     <Dot tone={c.running ? "ok" : c.exists ? "idle" : "muted"} />
                     <span className="font-mono">{c.name}</span>
                     <span className="text-muted">{c.running ? "running" : c.exists ? c.status ?? "stopped" : "absent"}</span>
-                    {c.managed_by_circuitloop && <Pill tone="info" className="!py-0">managed</Pill>}
+                    {c.managed_by_siliconbreak && <Pill tone="info" className="!py-0">managed</Pill>}
                   </li>
                 ))}
               </ul>

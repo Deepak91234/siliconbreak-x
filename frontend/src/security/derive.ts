@@ -74,7 +74,7 @@ export const variantName = (v: string) => (v === "vulnerable" ? "before" : v.sta
 
 export interface BoardHold { approvalId: string; at: number; sha: string | null; auditId: string | null; variant: string | null; revisionId: string | null }
 
-/** The design CircuitLoop most recently wrote to the board (latest executed program approval), or null. */
+/** The design SiliconBreak X most recently wrote to the board (latest executed program approval), or null. */
 export function latestProgram(approvals: Record<string, Approval>): BoardHold | null {
   let best: Approval | null = null;
   for (const a of Object.values(approvals)) {

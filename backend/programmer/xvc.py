@@ -242,7 +242,7 @@ async def stop_xvcd(pid: int, *, refuse_while_launcher: bool = True, wait_s: flo
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
         return {**base, "message": f"refused: {pid!r} is not a valid process id"}
     if pid == os.getpid():
-        return {**base, "message": "refused: that is the CircuitLoop backend itself"}
+        return {**base, "message": "refused: that is the SiliconBreak X backend itself"}
 
     procs = await list_processes()
     target = next((p for p in procs if p.pid == pid), None)
@@ -258,7 +258,7 @@ async def stop_xvcd(pid: int, *, refuse_while_launcher: bool = True, wait_s: flo
             return {**base, "message": (
                 f"refused: the Vivado launcher loop ({LAUNCHER_NAME}, pid {launchers[0].pid}) would restart xvcd within "
                 "~2 s, so stopping it is futile and would only interrupt the Vivado GUI's hardware connection. "
-                "Use the hw_server adapter instead (CircuitLoop selects it automatically while xvcd runs)."
+                "Use the hw_server adapter instead (SiliconBreak X selects it automatically while xvcd runs)."
             )}
 
     # Re-verify immediately before signalling (narrows the pid-reuse window to microseconds).

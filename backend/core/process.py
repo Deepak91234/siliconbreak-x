@@ -1,6 +1,6 @@
 """Restricted subprocess execution.
 
-Every external tool CircuitLoop runs (verilator, docker, openFPGALoader, ioreg,
+Every external tool SiliconBreak X runs (verilator, docker, openFPGALoader, ioreg,
 pgrep) goes through `run_command`, which:
   * takes an argv list (never a shell string; no shell=True anywhere),
   * streams output lines to a callback as they arrive,

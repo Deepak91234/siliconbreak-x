@@ -4,7 +4,7 @@ Why it exists: while the user's start_container.sh loop runs, the macOS `xvcd`
 bridge owns the FTDI JTAG interface (and is restarted within ~2 s if stopped),
 so openFPGALoader cannot open the board. hw_server inside vivado_container
 already reaches the board through that bridge
-(auto-open-servers xilinx-xvc:host.docker.internal:2542), so CircuitLoop
+(auto-open-servers xilinx-xvc:host.docker.internal:2542), so SiliconBreak X
 connects to it as an additional client from a short Vivado batch session.
 
 STATUS: implemented but NOT yet exercised against a real board on this machine
@@ -12,7 +12,7 @@ STATUS: implemented but NOT yet exercised against a real board on this machine
 are unit-tested with representative sample output.
 
 Constraints honoured:
-  * never runs concurrently with a CircuitLoop Vivado build (shares the build locks),
+  * never runs concurrently with a SiliconBreak X Vivado build (shares the build locks),
   * volatile programming only (program_hw_devices; no cfgmem / flash commands),
   * the bitstream is staged into the shared workspace, never written elsewhere.
 """
@@ -36,7 +36,7 @@ _STARTUP_HIGH = re.compile(r"End of startup status:\s*HIGH", re.I)
 # Real Vivado 2023.2 message when the XVC target exists but no board is behind it (captured on this Mac).
 _NO_ACTIVE_TARGET = re.compile(r"Labtoolstcl 44-494|no active target available", re.I)
 
-TCL = r"""# CircuitLoop hw_server adapter (generated). Volatile programming only.
+TCL = r"""# SiliconBreak X hw_server adapter (generated). Volatile programming only.
 set cl_mode [lindex $argv 0]
 set cl_bit  [lindex $argv 1]
 proc out {k v} { puts "CL_HW $k $v"; flush stdout }
@@ -130,7 +130,7 @@ async def _run(mode: str, bitstream: Path | None, timeout_s: float) -> tuple[dic
     if not avail["available"]:
         return {}, "", 0.0, avail["reason"]
     if vb.is_busy():
-        return {}, "", 0.0, "a CircuitLoop Vivado build is running; try again when it finishes"
+        return {}, "", 0.0, "a SiliconBreak X Vivado build is running; try again when it finishes"
     lock = vb._FileLock(s.vivado_workspace_host / ".build.lock")
     try:
         lock.acquire()

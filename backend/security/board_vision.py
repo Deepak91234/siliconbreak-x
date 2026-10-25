@@ -1,6 +1,6 @@
 """Webcam observation of a security case's Basys 3 demo (physical evidence).
 
-The board runs a bitstream CircuitLoop programmed (one variant of one audit). The
+The board runs a bitstream SiliconBreak X programmed (one variant of one audit). The
 user frames all 16 LEDs, then walks through the case's demo steps (set switches,
 hold the button) while the browser streams frames. For every step the session
 measures which LEDs were lit and compares that with
@@ -9,7 +9,7 @@ measures which LEDs were lit and compares that with
   * what the board-level simulation of this exact variant predicted.
 
 A leading "dark" step (no button held, all LEDs off) gives an off reference.
-LED detection reuses CircuitLoop's webcam pipeline: per-LED green level in each
+LED detection reuses SiliconBreak X's webcam pipeline: per-LED green level in each
 region, calibration learned from the whole session (LEDs that never toggle borrow
 the on/off levels of LEDs that did), hysteresis, and camera-motion rejection.
 

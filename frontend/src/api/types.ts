@@ -1,5 +1,5 @@
 /**
- * Wire types for the CircuitLoop backend, transcribed from docs/api.md and
+ * Wire types for the SiliconBreak X backend, transcribed from docs/api.md and
  * docs/contracts.md. They describe what the server sends; the UI never fills
  * these in itself. Fields the contract leaves open are typed as `unknown` /
  * index signatures so unexpected data is rendered generically instead of being
@@ -467,7 +467,7 @@ export interface ContainerInfo {
   running: boolean;
   status: string | null;
   image: string | null;
-  managed_by_circuitloop: boolean;
+  managed_by_siliconbreak: boolean;
   home_mount_source: string | null;
   started_at: string | null;
 }
@@ -651,7 +651,7 @@ export interface Guide {
   example?: string;
   revision_id: string | null;
   revision_number?: number;
-  programmed_by_circuitloop?: boolean;
+  programmed_by_siliconbreak?: boolean;
   sim_status?: string | null;
   build_status?: string | null;
 }

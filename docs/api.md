@@ -1,4 +1,4 @@
-# CircuitLoop HTTP / WebSocket API (v1)
+# SiliconBreak X HTTP / WebSocket API (v1)
 
 Backend: FastAPI on `http://127.0.0.1:8000`. Frontend dev server (Vite, port 5173)
 proxies `/api` and `/ws` to it. All JSON. Timestamps are Unix seconds (float).
@@ -69,7 +69,7 @@ endpoints or from WebSocket events — the frontend never invents progress.
 | GET | `/api/environment` | | `Environment` (below), cached ≤ 10 s |
 | POST | `/api/environment/refresh` | | `Environment` (fresh) |
 | POST | `/api/vivado/start` | | `Approval` (kind `start_vivado_container`, or `start_docker` if the daemon is down) |
-| POST | `/api/vivado/stop-headless` | | `{"ok", "message"}` (only the CircuitLoop-labelled container) |
+| POST | `/api/vivado/stop-headless` | | `{"ok", "message"}` (only the SiliconBreak X-labelled container) |
 | GET | `/api/approvals?status=pending` | | `[Approval]` |
 | POST | `/api/approvals/{id}/approve` | | `Approval` (executes / unblocks the waiting run) |
 | POST | `/api/approvals/{id}/deny` | | `Approval` |

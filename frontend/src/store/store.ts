@@ -41,7 +41,7 @@ import {
   putSecurityAudits,
 } from "./reducer";
 
-const SEQ_KEY = "circuitloop:lastSeq";
+const SEQ_KEY = "siliconbreak:lastSeq";
 const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history", "dashboard", "security", "bench", "fpga"];
 
 function readSeq(): number {
@@ -577,7 +577,7 @@ export class AppStore {
     return this.openAudit(res);
   }
 
-  /** Audit the current CircuitLoop project's generated RTL against the generic contract. */
+  /** Audit the current SiliconBreak X project's generated RTL against the generic contract. */
   async startProjectAudit(projectId: string, revisionId?: string | null): Promise<SecurityAudit> {
     const res = await securityApi.startProjectAudit(projectId, revisionId);
     return this.openAudit(res);

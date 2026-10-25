@@ -17,7 +17,7 @@ Rules (all enforced before a request is sent):
 
 Prices are USD per million tokens. Claude prices are Anthropic's published rates;
 Bitdeer prices are conservative placeholders (overestimates) unless configured.
-The ledger lives in the CircuitLoop database (table ai_usage).
+The ledger lives in the SiliconBreak X database (table ai_usage).
 """
 
 from __future__ import annotations

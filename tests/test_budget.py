@@ -14,7 +14,7 @@ from backend.agent.llm.base import LLMError, LLMResult
 
 @pytest.fixture
 def ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("SILICONBREAK_BUDGET_ANTHROPIC_USD", "1.0")
     monkeypatch.setenv("SILICONBREAK_BUDGET_DAILY_USD", "0.8")
     monkeypatch.setenv("SILICONBREAK_BUDGET_PER_CALL_USD", "0.5")
@@ -136,7 +136,7 @@ def test_providers_stay_offline_while_live_is_off(ledger, monkeypatch):
 
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setenv("BITDEER_API_KEY", "bd-test-not-real")
     from backend.core import config
     from backend.storage import store

@@ -32,7 +32,7 @@ from backend.programmer.usb import UsbDevice
 from backend.programmer.xvc import XvcStatus
 from backend.specifications.board import load_board
 
-log = logging.getLogger("circuitloop.hardware")
+log = logging.getLogger("siliconbreak.hardware")
 
 HardwareState = Literal["connected", "no_board", "busy", "unsupported", "error", "tool_missing", "unknown"]
 ApprovalVerifier = Callable[[str, str], Awaitable[bool]]

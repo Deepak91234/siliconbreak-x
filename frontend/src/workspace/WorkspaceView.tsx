@@ -1,5 +1,5 @@
 /**
- * Workspace: the CircuitLoop builder in three views plus two panels.
+ * Workspace: the SiliconBreak X builder in three views plus two panels.
  *
  *   header      compact project + revision selector, New design, Build, History
  *   AI Builder  the conversation (new designs, follow-ups, history, run options,

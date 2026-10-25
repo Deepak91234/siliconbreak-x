@@ -2,7 +2,7 @@
 
 Kinds:
   program_fpga            volatile SRAM programming of the Basys 3 (executed by the waiting run)
-  start_vivado_container  start the CircuitLoop-managed headless Vivado container (executed here)
+  start_vivado_container  start the SiliconBreak X-managed headless Vivado container (executed here)
   start_docker            launch Docker Desktop (executed here)
   stop_xvcd               terminate the macOS xvcd USB bridge (executed here, pid re-verified)
 
@@ -20,7 +20,7 @@ from backend.core.events import bus
 from backend.storage import store
 from backend.storage.db import now
 
-log = logging.getLogger("circuitloop.approvals")
+log = logging.getLogger("siliconbreak.approvals")
 
 _waiters: dict[str, asyncio.Future] = {}
 

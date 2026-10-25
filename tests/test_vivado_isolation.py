@@ -1,4 +1,4 @@
-"""Isolated Vivado layout: CircuitLoop only uses a container whose Vivado install mount is
+"""Isolated Vivado layout: SiliconBreak X only uses a container whose Vivado install mount is
 read-only, and its headless start creates exactly that container (no network, capped memory)."""
 
 from __future__ import annotations

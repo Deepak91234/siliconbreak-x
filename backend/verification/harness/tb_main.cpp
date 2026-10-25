@@ -1,6 +1,6 @@
-// CircuitLoop generic Basys 3 simulation harness (Verilator).
+// SiliconBreak X generic Basys 3 simulation harness (Verilator).
 //
-// Works for every CircuitLoop design because the trusted board wrapper
+// Works for every SiliconBreak X design because the trusted board wrapper
 // (basys3_top) always has the same port list.
 //
 // usage: Vsim <stimulus.txt> <trace.txt> [vcd_path vcd_start_cycle vcd_end_cycle] [+verilator+...]
@@ -11,7 +11,7 @@
 //   ports: sw (16-bit), btnC, btnU, btnL, btnR, btnD.  value: decimal or 0x-hex.
 //
 // trace.txt (written by this harness):
-//     # circuitloop-trace v1
+//     # siliconbreak-trace v1
 //     <cycle> <signal> 0x<hex>     output value after rising edge <cycle> (cycle 0 = initial)
 //   signals: led, seg, dp, an. A line is written only when the value changes.
 //     end <cycles>
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
     dump(0, 0);
 
     uint32_t led = top->led, seg = top->seg, dp = top->dp, an = top->an;
-    std::fprintf(out, "# circuitloop-trace v1\n");
+    std::fprintf(out, "# siliconbreak-trace v1\n");
     std::fprintf(out, "0 led 0x%04x\n0 seg 0x%02x\n0 dp 0x%x\n0 an 0x%x\n", led, seg, dp, an);
 
     for (uint64_t cycle = 1; cycle <= end_cycle && !ctx->gotFinish(); ++cycle) {

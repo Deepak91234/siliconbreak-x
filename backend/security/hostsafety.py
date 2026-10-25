@@ -14,7 +14,7 @@ rejects constructs that could reach the host or forge the verifier's verdict:
     `systemc_* blocks)
   * non-ASCII text and oversized files
 
-It reuses CircuitLoop's comment-stripping lexer (rtl/safety.py), so banned
+It reuses SiliconBreak X's comment-stripping lexer (rtl/safety.py), so banned
 names inside comments or strings are ignored and code after a string literal
 is still scanned. Anything it cannot lex is rejected.
 """

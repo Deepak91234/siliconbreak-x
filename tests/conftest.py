@@ -36,7 +36,7 @@ def _no_paid_ai(request, monkeypatch, tmp_path):
         for k in PAID_KEYS:
             monkeypatch.setenv(k, "")
         monkeypatch.setenv("SILICONBREAK_LIVE_AI", "off")
-    monkeypatch.setenv("CIRCUITLOOP_RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setenv("SILICONBREAK_RUNS_DIR", str(tmp_path / "runs"))
     config.get_settings.cache_clear()
     store.get_db.cache_clear()
     yield

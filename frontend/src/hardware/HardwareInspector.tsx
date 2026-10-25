@@ -92,8 +92,8 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
     return v;
   }, [guide, ext, step, mode, simKind, replay, virtual, observed]);
 
-  const programmed = !!guide?.programmed_by_circuitloop;
-  // The revision's "programmed" status is historical; the board holds whatever CircuitLoop wrote last.
+  const programmed = !!guide?.programmed_by_siliconbreak;
+  // The revision's "programmed" status is historical; the board holds whatever SiliconBreak X wrote last.
   const hold = latestProgram(approvals);
   const onBoard = programmed && (!hold || hold.revisionId === revisionId);
   const holdElsewhere = programmed && !!hold && hold.revisionId !== revisionId;
@@ -283,7 +283,7 @@ function LiveStatus({ programmed, holdElsewhere, guide, observed, onProgram, onC
       {state !== "connected" && state !== "unknown" ? (
         <p className="text-muted">
           {state === "no_board" ? "No Basys 3 detected. Plug it in with the USB cable; the board appears here within a few seconds." :
-            state === "busy" ? "The JTAG cable is held by another program (usually xvcd); CircuitLoop will use the Vivado hw_server path when available." :
+            state === "busy" ? "The JTAG cable is held by another program (usually xvcd); SiliconBreak X will use the Vivado hw_server path when available." :
               state === "tool_missing" ? "No programmer available: install openFPGALoader or start the Vivado container." :
                 hw?.message ?? "Checking the board…"}
         </p>

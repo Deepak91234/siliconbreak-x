@@ -38,7 +38,7 @@ export const EXAMPLE_PROJECTS: Array<{ title: string; blurb: string; prompt: str
 ];
 
 export function fillPrompt(text: string): void {
-  window.dispatchEvent(new CustomEvent("circuitloop:fill-composer", { detail: text }));
+  window.dispatchEvent(new CustomEvent("siliconbreak:fill-composer", { detail: text }));
 }
 
 export function Welcome() {

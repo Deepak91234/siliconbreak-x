@@ -1,5 +1,5 @@
 `verilator_config
-// CircuitLoop lint policy (applied to every lint and simulation build).
+// SiliconBreak X lint policy (applied to every lint and simulation build).
 //
 // PROCASSINIT: Xilinx 7-series flip-flops are loaded from their declaration
 // initializer (INIT attribute) by GSR at configuration time, so

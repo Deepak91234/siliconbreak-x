@@ -1,4 +1,4 @@
-"""CircuitLoop FastAPI application.
+"""SiliconBreak X FastAPI application.
 
 Run:  .venv/bin/python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8000
 """
@@ -30,7 +30,7 @@ from backend.core.config import REPO_ROOT, get_settings
 from backend.core.events import Event, bus
 from backend.storage import store
 
-log = logging.getLogger("circuitloop")
+log = logging.getLogger("siliconbreak")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     hardware.set_xvcd_approval_verifier(approvals.verify_stop_xvcd_approval)
     monitor = asyncio.create_task(hardware.monitor())
     startup = asyncio.create_task(_startup_checks())
-    log.info("CircuitLoop backend ready (runs dir %s, LLM configured: %s)", s.runs_dir, s.llm_configured)
+    log.info("SiliconBreak X backend ready (runs dir %s, LLM configured: %s)", s.runs_dir, s.llm_configured)
     try:
         yield
     finally:
@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
                 await t
 
 
-app = FastAPI(title="CircuitLoop", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="SiliconBreak X", version="0.1.0", lifespan=lifespan)
 
 # ---- local-only access controls -------------------------------------------------
 # The API can program the FPGA and start containers (behind user approvals), so it
@@ -111,8 +111,8 @@ app = FastAPI(title="CircuitLoop", version="0.1.0", lifespan=lifespan)
 #    hides responses; it does not stop a "simple" cross-site POST from executing.
 # Requests without an Origin header (curl, scripts on this machine) are allowed.
 ALLOWED_ORIGINS = {"http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8000", "http://localhost:8000"}
-# e.g. a second dashboard on another port for testing: CIRCUITLOOP_EXTRA_ORIGINS=http://127.0.0.1:5199
-ALLOWED_ORIGINS |= {o.strip() for o in os.environ.get("CIRCUITLOOP_EXTRA_ORIGINS", "").split(",") if o.strip().startswith("http://127.0.0.1:") or o.strip().startswith("http://localhost:")}
+# e.g. a second dashboard on another port for testing: SILICONBREAK_EXTRA_ORIGINS=http://127.0.0.1:5199
+ALLOWED_ORIGINS |= {o.strip() for o in os.environ.get("SILICONBREAK_EXTRA_ORIGINS", "").split(",") if o.strip().startswith("http://127.0.0.1:") or o.strip().startswith("http://localhost:")}
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 app.add_middleware(
     CORSMiddleware,

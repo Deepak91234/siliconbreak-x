@@ -1,4 +1,4 @@
-"""CircuitLoop hardware specification intermediate representation (IR).
+"""SiliconBreak X hardware specification intermediate representation (IR).
 
 The IR is the single contract between every pipeline stage:
 
@@ -60,7 +60,7 @@ _RESERVED = {
 def check_identifier(value: str) -> str:
     if not _IDENT_RE.match(value):
         raise ValueError(
-            f"'{value}' is not a valid CircuitLoop identifier "
+            f"'{value}' is not a valid SiliconBreak X identifier "
             "(lowercase letter first, then lowercase letters/digits/underscore, max 31 chars)"
         )
     if value in _RESERVED:

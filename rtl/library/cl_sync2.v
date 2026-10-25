@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: two-flop synchronizer.
+// SiliconBreak X preverified library: two-flop synchronizer.
 // Brings an asynchronous single-bit input (button, switch) into the clk domain.
 `default_nettype none
 module cl_sync2 #(

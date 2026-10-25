@@ -1,6 +1,6 @@
 # SiliconBreak X baseline (M0, 2026-10-24)
 
-Snapshot of CircuitLoop before the security extension, taken on branch
+Snapshot of the AI FPGA engineering base before the security extension, taken on branch
 `feature/siliconbreak-x` (cut from `main` at `e092601`, working tree clean).
 
 ## What already worked and is reused
@@ -31,7 +31,7 @@ machine was heavily loaded; the test passes alone (9 s) and in the following ful
 | Item | State |
 |---|---|
 | Docker | 29.8.1 |
-| `vivado_container` (image `x64-linux`, linux/amd64 under Rosetta) | Running when the session started (up 3 days); **no longer present** later the same day (`docker ps -a` does not list it). CircuitLoop correctly reports "no Vivado container is running" and offers, but never starts, a headless container. |
+| `vivado_container` (image `x64-linux`, linux/amd64 under Rosetta) | Running when the session started (up 3 days); **no longer present** later the same day (`docker ps -a` does not list it). SiliconBreak X correctly reports "no Vivado container is running" and offers, but never starts, a headless container. |
 | Verilator | 5.052 (Homebrew) |
 | Yosys | 0.69+post (Homebrew); `yosys-smtbmc` present; no SymbiYosys, no external SMT solver. Formal checks use Yosys's built-in SAT solver instead. |
 | openFPGALoader | v1.1.1 |

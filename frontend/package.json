@@ -1,9 +1,9 @@
 {
-  "name": "circuitloop-dashboard",
+  "name": "siliconbreak-x",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "CircuitLoop dashboard: chat, pipeline monitor and verification views for the Basys 3 FPGA flow.",
+  "description": "SiliconBreak X dashboard: chat, pipeline monitor and verification views for the Basys 3 FPGA flow.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
