@@ -651,3 +651,29 @@ async def test_raw_handler_script_with_flat_patch_fields(tmp_path):
     assert (await h(req(flat)))["selectedOption"] == "proceed_once"
     assert (await h(req({**flat, "files": [{"filePath": target, "operation": "delete"}]})))["selectedOption"] == "cancel"
     assert (await h(req({**flat, "command": "make"})))["selectedOption"] == "cancel"
+
+
+async def test_raw_handler_real_cli_0249_script_request_shape(tmp_path):
+    """Shape captured from a live Droid CLI 0.249 session (paths replaced): details.calls[].confirmation."""
+    ws = tmp_path / "ws"
+    (ws / "rtl").mkdir(parents=True)
+    rec: dict = {}
+    h = rep.make_raw_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec,
+                                        rep.make_permission_handler(ws, ["rtl/debug_access_ctrl.v"], rec))
+    target = str(ws / "rtl/debug_access_ctrl.v")
+    patch = (f"*** Begin Patch\n*** Update File: {target}\n@@\n-  if (authorized || debug_mode) begin\n"
+             "+  if (authorized) begin\n*** End Patch")
+
+    def req(confirmation, tool_name="ApplyPatch"):
+        return {"toolUses": [{"toolUse": {"type": "tool_use", "id": "call_x", "name": "Script",
+                                          "input": {"script": "text(await tools.ApplyPatch(...))"}},
+                              "confirmationType": "script",
+                              "details": {"type": "script", "impactLevel": "low",
+                                          "calls": [{"toolName": tool_name, "line": 2, "column": 11,
+                                                     "toolInput": {"input": patch}, "confirmation": confirmation}]}}],
+                "options": [{"label": "Yes", "value": "proceed_once"}, {"label": "No", "value": "cancel"}]}
+
+    good = {"type": "apply_patch", "filePath": target, "fileName": "debug_access_ctrl.v", "patchContent": patch}
+    assert (await h(req(good)))["selectedOption"] == "proceed_once"
+    assert (await h(req({**good, "filePath": str(tmp_path / "other.v")})))["selectedOption"] == "cancel"
+    assert (await h(req({"type": "exec", "fullCommand": "make", "command": "make"}, "Execute")))["selectedOption"] == "cancel"

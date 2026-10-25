@@ -123,6 +123,21 @@ Settings (`.env`): `SILICONBREAK_LIVE_AI`, `SILICONBREAK_BUDGET_ANTHROPIC_USD`, 
 `SILICONBREAK_DROID_MAX_ATTEMPTS`, `BITDEER_MODEL` (this account offers `zai-org/GLM-5.3`, `GLM-5.3-Flash`,
 `DeepSeek-V4.1-Flash`, `DeepSeek-V4-Flash`, `Qwen3.8-27B`; configured: `zai-org/GLM-5.3`).
 
+### First live runs (2026-10-24)
+
+* **Bitdeer investigation (GLM-5.3):** the first call ran away (analysis inside `summary`, no `findings`, then a
+  repeated sentence until max_tokens) and the pipeline fell back to the offline rules. After requiring `findings`,
+  bounding text fields, adding a mild repetition penalty and an 8k token cap, a live call returned the correct finding
+  (`rtl/debug_access_ctrl.v` 47-54, P-NOLEAK + P-DEBUG, CWE-1191, high confidence) in 12 s, about $0.005. Ledger
+  total: $0.079 over 3 calls (mostly the worst case kept for the first, truncated call).
+* **Factory Droid repair:** Droid found the right fix every time, but its edits were cancelled: droid-sdk 0.5.0 cannot
+  parse the CLI 0.249 permission request for an ApplyPatch made through the `Script` tool (`confirmationType:
+  "script"`, details `calls[].confirmation`), and passing any tool restriction hid the edit tool. A wire-level handler
+  now approves a script request only when every inner operation is an update of an allowlisted file. Live result
+  (session `fcf47602-...`, model `gpt-6.1-sol`): one approved edit, `if (authorized || debug_mode)` -> `if (authorized)`,
+  **12/12 trusted tests passed, formal proven**. Six Droid sessions used in total (about 94.5k Factory credits
+  reported); the daily cap stopped further sessions.
+
 ## Isolated Vivado (protecting the university setup)
 
 The `x64-linux` image contains only Ubuntu and libraries; Vivado 2023.2 (34 GB) lives inside the coursework bind
