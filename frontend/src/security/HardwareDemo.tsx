@@ -60,6 +60,12 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
       <div className="mt-2 grid gap-x-4 gap-y-0.5 text-2xs text-muted sm:grid-cols-2">
         {info.mapping.map((m) => <div key={m.control}><span className="font-mono text-fg">{m.control}</span> → <span className="font-mono">{m.signal}</span> · {m.text}</div>)}
       </div>
+      {camera && (
+        <div className="mt-3">
+          <BoardCamera auditId={audit.id} variant={camera} label={info.variants.find((x) => x.variant === camera)?.label ?? camera}
+                       onClose={() => { setCamera(null); res.reload(); }} />
+        </div>
+      )}
       <div className="mt-3 space-y-3">
         {info.variants.map((v) => {
           const st = info.state[v.variant];
@@ -77,7 +83,7 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
                   {b ? "Rebuild" : "Simulate + build"}
                 </Button>
                 <Button size="sm" variant="primary" disabled={!bitOk || !connected} busy={busy === `p:${v.variant}`}
-                        title={!bitOk ? "build a bitstream first" : !connected ? "connect the Basys 3" : "asks for your approval before programming"}
+                        title={!bitOk ? "build a bitstream first" : !connected ? (hw?.state === "unknown" ? "press Detect in FPGA Lab → Connection first" : "connect the Basys 3") : "asks for your approval before programming"}
                         onClick={() => act(`p:${v.variant}`, () => securityApi.fpgaProgram(audit.id, v.variant))}>
                   Program…
                 </Button>
@@ -103,6 +109,13 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
                     Programmed via {p.adapter}: {p.ok ? "done" : p.state} · {p.message}
                   </p>
                 ))}
+                {bitOk && !info.provenance?.[v.variant]?.confirmed && (
+                  <p className="rounded-md border border-warn/30 bg-warn/5 px-2.5 py-1.5 text-warn">
+                    Webcam evidence needs this bitstream on the board: {info.provenance?.[v.variant]?.reason ?? "program it first"}.
+                    {connected ? " Press Program… (asks for your approval)." : hw?.state === "unknown"
+                      ? " Press Detect (FPGA Lab → Connection) to confirm the board, then Program…." : " Connect the Basys 3, then Program…."}
+                  </p>
+                )}
                 {(st?.observations ?? []).slice(-1).map((o) => (
                   <Collapsible key={o.session_id} title={
                     <span className="flex flex-wrap items-center gap-2 text-xs">
@@ -125,12 +138,6 @@ export function HardwareDemo({ audit }: { audit: SecurityAudit }) {
       {info.state.loaded && (
         <p className="mt-2 text-xs text-ok">Last programmed: {info.variants.find((x) => x.variant === info.state.loaded!.variant)?.label}. What the
           board shows is only recorded through “Verify with webcam”; otherwise it is your own observation.</p>
-      )}
-      {camera && (
-        <div className="mt-3">
-          <BoardCamera auditId={audit.id} variant={camera} label={info.variants.find((x) => x.variant === camera)?.label ?? camera}
-                       onClose={() => { setCamera(null); res.reload(); }} />
-        </div>
       )}
     </Card>
   );

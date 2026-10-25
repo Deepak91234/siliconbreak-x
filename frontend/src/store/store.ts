@@ -437,7 +437,7 @@ export class AppStore {
     const cur = this.state.selection;
     if (
       fromHash.projectId === cur.projectId && fromHash.tab === cur.tab &&
-      fromHash.revisionId === cur.revisionId && fromHash.runId === cur.runId
+      fromHash.revisionId === cur.revisionId && fromHash.runId === cur.runId && fromHash.auditId === cur.auditId
     ) return;
     this.update((s) => ({ ...s, selection: { ...s.selection, ...fromHash, compareAgainst: null } }));
     if (fromHash.projectId) void this.loadProject(fromHash.projectId).catch(() => undefined);

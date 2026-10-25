@@ -403,9 +403,14 @@ class SecurityOrchestrator:
         ok = bool(sha) and d.get("bitstream_sha256") == sha and d.get("audit_id") == audit["id"] and d.get("variant") == variant
         out["confirmed"] = ok
         if not ok:
-            what = (f"{d.get('variant')} of audit {d.get('audit_id')}" if d.get("audit_id")
-                    else "a design from the regular CircuitLoop flow")
-            out["reason"] = f"the last design CircuitLoop programmed is {what}; program this variant first"
+            if d.get("audit_id"):
+                what = f"{d.get('variant')} of audit {d.get('audit_id')}"
+            else:
+                rev = store.get_revision(d["revision_id"]) if d.get("revision_id") else None
+                proj = store.get_project(rev["project_id"]) if rev else None
+                what = (f"the Workspace design \"{proj['title']}\" (r{rev['number']})" if proj and rev
+                        else "a Workspace design")
+            out["reason"] = f"the board was last programmed with {what}; program this variant first"
         return out
 
     def start_board_observation(self, audit_id: str, variant: str) -> dict:

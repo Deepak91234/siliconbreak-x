@@ -111,7 +111,10 @@ export function BoardCamera({ auditId, variant, label, onClose }: { auditId: str
   const [box, setBox] = useState<Box | null>(null);
   const [capture, setCapture] = useState<{ step: string; phase: "lead" | "rec" | "more"; left: number } | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const timers = useRef<number[]>([]);
+  // The panel opens inside a long page: bring it into view so the click visibly does something.
+  useEffect(() => { rootRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); }, []);
 
   const put = useCallback((s: CameraSession) => setSess((cur) => (cur && s.id !== cur.id ? cur : s)), []);
   const stream = useFrameStreamer<CameraSession>(sess?.id ?? null, camera.videoRef, put);
@@ -221,6 +224,7 @@ export function BoardCamera({ auditId, variant, label, onClose }: { auditId: str
   const captured = sess ? Object.keys(sess.step_results).length : 0;
 
   return (
+    <div ref={rootRef} className="scroll-mt-4">
     <Card title={<span>Webcam evidence · <span className="font-normal text-muted">{label}</span></span>}
           actions={<Button size="sm" variant="ghost" onClick={() => { stream.stop(); camera.stop(); onClose(); }}>Close</Button>}>
       {!sess && (
@@ -362,5 +366,6 @@ export function BoardCamera({ auditId, variant, label, onClose }: { auditId: str
         </div>
       )}
     </Card>
+    </div>
   );
 }
