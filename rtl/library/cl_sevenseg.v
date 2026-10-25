@@ -1,4 +1,4 @@
-// CircuitLoop preverified library: 4-digit seven-segment display driver (Basys 3).
+// SiliconBreak X preverified library: 4-digit seven-segment display driver (Basys 3).
 // digits[5k+4:5k] = {lit, hex[3:0]} for digit k (k = 0 is the rightmost, AN0).
 // The digits are time-multiplexed: one digit is driven per slot of DIGIT_CYCLES
 // clock cycles (100000 at 100 MHz = 1 kHz slots, a 250 Hz frame). An unlit digit
