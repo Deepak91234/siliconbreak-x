@@ -3,38 +3,40 @@
 @tailwind utilities;
 
 /*
- * Theme tokens as "r g b" triplets so Tailwind's <alpha-value> works
- * (tailwind.config.ts). Light values on :root, dark values under .dark
- * (index.html starts in dark; App.tsx toggles the class).
- */
-/*
- * CircuitLoop design tokens. Colours are "r g b" triplets so Tailwind's
- * <alpha-value> works (tailwind.config.ts). Light values on :root, dark values
- * under .dark (the default). Spacing follows Tailwind's 4 px scale; radius,
- * elevation, typography and motion tokens are below and mapped in the config.
+ * SiliconBreak X design tokens. Colours are "r g b" triplets so Tailwind's
+ * <alpha-value> works (tailwind.config.ts). Light values on :root; the primary
+ * dark theme lives under .dark (index.html applies it before first paint unless
+ * the user chose light; App.tsx toggles the class). Brand: blue -> cyan
+ * -> teal. Spacing follows Tailwind's 4 px scale; radius, elevation and motion
+ * tokens are below and mapped in the config.
  */
 :root {
   /* surfaces */
-  --bg: 245 247 248;
+  --bg: 246 248 252;
   --panel: 255 255 255;
-  --raised: 239 242 244;
-  --sunken: 232 236 239;
-  --line: 215 221 226;
-  --line-strong: 190 198 206;
+  --raised: 241 245 250;
+  --sunken: 243 246 250;
+  --line: 226 232 240;
+  --line-strong: 203 213 225;
   /* text */
-  --fg: 17 24 32;
-  --muted: 75 87 99;
-  --faint: 120 132 144;
+  --fg: 15 23 42;
+  --muted: 71 85 105;
+  --faint: 128 142 161;
   /* accent + semantic */
-  --accent: 13 148 136;
+  --accent: 37 99 235;
   --accent-fg: 255 255 255;
   --ok: 5 150 105;
   --bad: 220 38 38;
-  --warn: 180 115 0;
-  --info: 37 99 235;
-  --idle: 120 132 144;
+  --warn: 180 110 0;
+  --info: 8 145 178;
+  --idle: 128 142 161;
   --violet: 124 58 237;
   --orange: 234 88 12;
+  /* brand gradient */
+  --brand-a: 37 99 235;
+  --brand-b: 6 182 212;
+  --brand-c: 20 184 166;
+  --glow: 37 99 235;
   /* board twin */
   --board: 19 71 64;
   --board-line: 47 112 101;
@@ -45,28 +47,34 @@
   --chip: 24 28 32;
   --led-on: 74 222 128;
   --led-off: 38 64 52;
+  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.04), 0 6px 20px -8px rgb(15 23 42 / 0.10);
+  --shadow-pop: 0 18px 48px -12px rgb(15 23 42 / 0.28);
   color-scheme: light;
 }
 
 .dark {
-  --bg: 9 12 15;
-  --panel: 14 18 22;
-  --raised: 21 26 31;
-  --sunken: 6 8 11;
-  --line: 33 40 47;
-  --line-strong: 52 61 71;
-  --fg: 228 233 238;
-  --muted: 150 162 174;
-  --faint: 101 114 127;
-  --accent: 45 212 191;
-  --accent-fg: 4 30 27;
+  --bg: 6 10 20;
+  --panel: 11 17 31;
+  --raised: 19 28 47;
+  --sunken: 5 9 18;
+  --line: 30 41 64;
+  --line-strong: 50 66 96;
+  --fg: 226 232 240;
+  --muted: 152 166 188;
+  --faint: 104 120 145;
+  --accent: 77 141 255;
+  --accent-fg: 255 255 255;
   --ok: 52 211 153;
   --bad: 248 113 113;
   --warn: 251 191 36;
-  --info: 96 165 250;
-  --idle: 101 114 127;
+  --info: 34 211 238;
+  --idle: 104 120 145;
   --violet: 167 139 250;
   --orange: 251 146 60;
+  --brand-a: 77 141 255;
+  --brand-b: 34 211 238;
+  --brand-c: 45 212 191;
+  --glow: 59 130 246;
   --board: 14 52 47;
   --board-line: 33 88 79;
   --silk: 196 222 215;
@@ -76,15 +84,15 @@
   --chip: 18 21 24;
   --led-on: 74 222 128;
   --led-off: 30 52 42;
+  --shadow-panel: 0 0 0 1px rgb(255 255 255 / 0.02), 0 10px 30px -12px rgb(0 0 0 / 0.65);
+  --shadow-pop: 0 24px 60px -12px rgb(0 0 0 / 0.75);
   color-scheme: dark;
 }
 
 :root {
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --shadow-panel: 0 1px 0 rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.08);
-  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.35);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-fast: 120ms;
   --dur: 200ms;
@@ -100,6 +108,66 @@ body {
   background: rgb(var(--bg));
   color: rgb(var(--fg));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- brand utilities */
+.sbx-gradient-text {
+  background: linear-gradient(92deg, rgb(var(--brand-a)), rgb(var(--brand-b)) 60%, rgb(var(--brand-c)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.sbx-brand-bg { background: linear-gradient(135deg, rgb(var(--brand-a)), rgb(var(--brand-b))); }
+.sbx-btn-primary {
+  background: linear-gradient(135deg, rgb(var(--brand-a)), rgb(var(--brand-a) / 0.85) 55%, rgb(var(--brand-b) / 0.9));
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.18) inset, 0 6px 16px -6px rgb(var(--brand-a) / 0.55);
+}
+.sbx-btn-primary:hover:not(:disabled) { filter: brightness(1.06); }
+/* hero header: soft brand glow + faint engineering grid */
+.sbx-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(60rem 18rem at 85% -20%, rgb(var(--brand-b) / 0.16), transparent 60%),
+    radial-gradient(40rem 16rem at 10% 120%, rgb(var(--brand-a) / 0.12), transparent 60%),
+    rgb(var(--panel));
+}
+.sbx-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgb(var(--line) / 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--line) / 0.55) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: linear-gradient(115deg, transparent 35%, black 75%);
+  mask-image: linear-gradient(115deg, transparent 35%, black 75%);
+  opacity: 0.7;
+}
+.sbx-card-hover { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.sbx-card-hover:hover { transform: translateY(-1px); box-shadow: var(--shadow-pop); border-color: rgb(var(--accent) / 0.35); }
+
+@keyframes sbxEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.sbx-enter { animation: sbxEnter 260ms var(--ease) both; }
+@keyframes sbxShimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.sbx-skeleton {
+  background: linear-gradient(90deg, rgb(var(--raised)) 0%, rgb(var(--line) / 0.7) 40%, rgb(var(--raised)) 80%);
+  background-size: 800px 100%;
+  animation: sbxShimmer 1.4s linear infinite;
+}
+@keyframes sbxScan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
 }
 
 * {
@@ -157,6 +225,7 @@ body {
 .board-focus { animation: boardFocus 1.6s var(--ease) infinite; }
 @media (prefers-reduced-motion: reduce) {
   .board-focus { animation: none; }
+  .sbx-enter, .sbx-skeleton { animation: none; }
   * { transition-duration: 0ms !important; }
 }
 

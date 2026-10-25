@@ -245,7 +245,7 @@ export function VivadoTab({ revisionId, run }: { revisionId: string | null; run:
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel shadow-panel px-3 py-2 text-xs">
         {buildStages.length > 0 ? (
           buildStages.map((s) => (
             <span key={s.key} className="flex items-center gap-1.5" title={s.summary ?? undefined}>

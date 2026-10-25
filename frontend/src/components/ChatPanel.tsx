@@ -72,7 +72,7 @@ function MessageBubble({ m, approvals, onRun }: { m: Message; approvals: Record<
       >
         {!isUser && (
           <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            <span>CircuitLoop agent</span>
+            <span>Design agent</span>
             {m.kind !== "text" && <span className="text-faint">{m.kind}</span>}
           </div>
         )}
@@ -308,10 +308,6 @@ function ProjectPicker({ projectId }: { projectId: string | null }) {
       </Select>
       <Button size="sm" variant={projectId ? "secondary" : "ghost"} onClick={() => store.selectProject(null)} title="Start a new design">
         + New
-      </Button>
-      <Button size="sm" variant="ghost" title="New security audit (SiliconBreak X)"
-              onClick={() => { store.selectProject(null); store.setTab("security"); }}>
-        Audit
       </Button>
     </div>
   );

@@ -1,11 +1,12 @@
 /**
- * Environment status bar (GET /api/environment + environment/hardware events):
- * Docker, Vivado container, Verilator, openFPGALoader, board, LLM. Each chip
- * opens a popover with the raw details the backend reported.
+ * Top bar: the page title, environment status chips (GET /api/environment +
+ * environment/hardware events: Docker, Vivado container, Verilator,
+ * openFPGALoader, board, LLM; each opens a popover with the raw details the
+ * backend reported), approvals, presentation mode, refresh and theme.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { INSPECTOR_DOCK_MIN_PX, setUi, toggleInspector, useUi } from "../lib/ui";
+import { setUi } from "../lib/ui";
 import { errorMessage } from "../api/client";
 import type { Approval, Environment } from "../api/types";
 import { useAppState, useStore } from "../store/store";
@@ -49,15 +50,15 @@ function Popover({ label, tone, pulse, children, wide }: { label: ReactNode; ton
         type="button"
         onClick={() => setOpen(!open)}
         className={cx(
-          "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs ring-1 ring-inset transition-colors",
-          open ? "bg-raised ring-line" : "ring-transparent hover:bg-raised hover:ring-line",
+          "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-medium ring-1 ring-inset transition-colors",
+          open ? "bg-raised text-fg ring-line-strong" : "bg-raised/40 text-muted ring-line/70 hover:bg-raised hover:text-fg hover:ring-line",
         )}
       >
         <Dot tone={tone} pulse={pulse} />
         {label}
       </button>
       {open && (
-        <div className={cx("absolute right-0 z-40 mt-1 rounded-lg border border-line bg-panel p-3 shadow-xl shadow-black/30", wide ? "w-[26rem]" : "w-80")}>
+        <div className={cx("sbx-enter absolute left-0 z-40 mt-1.5 rounded-xl border border-line bg-panel p-3 shadow-pop", wide ? "w-[26rem]" : "w-80")}>
           {children}
         </div>
       )}
@@ -104,7 +105,7 @@ function VivadoChip({ env }: { env: Environment }) {
       <Popover tone={tone} pulse={v.build_running} wide label={
         <span className="flex items-center gap-1.5">
           {label}
-          {v.ready && v.active_container && <span className="hidden text-muted xl:inline">{v.active_container}</span>}
+          {v.ready && v.active_container && <span className="hidden text-faint 2xl:inline">{v.active_container}</span>}
           {v.gui_session_running && <Pill tone="violet" className="!py-0">GUI</Pill>}
           {v.build_running && <Pill tone="accent" className="!py-0">building</Pill>}
         </span>
@@ -180,8 +181,8 @@ function ApprovalsTray({ pending }: { pending: Approval[] }) {
         type="button"
         onClick={() => setOpen(!open)}
         className={cx(
-          "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs ring-1 ring-inset",
-          pending.length ? "bg-warn/15 text-warn ring-warn/30" : "text-muted ring-transparent hover:bg-raised",
+          "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium ring-1 ring-inset transition-colors",
+          pending.length ? "bg-warn/15 text-warn ring-warn/40 shadow-[0_0_18px_-6px_rgb(var(--warn)/0.7)]" : "text-muted ring-transparent hover:bg-raised hover:text-fg",
         )}
         title="Pending approvals"
       >
@@ -191,7 +192,7 @@ function ApprovalsTray({ pending }: { pending: Approval[] }) {
         {pending.length ? `${pending.length} pending` : "Approvals"}
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 max-h-[70vh] w-[24rem] space-y-2 overflow-auto rounded-lg border border-line bg-panel p-3 shadow-xl shadow-black/30">
+        <div className="sbx-enter absolute right-0 z-40 mt-1.5 max-h-[70vh] w-[24rem] space-y-2 overflow-auto rounded-xl border border-line bg-panel p-3 shadow-pop">
           {pending.length === 0 ? (
             <div className="py-4 text-center text-xs text-muted">No approvals are waiting.</div>
           ) : (
@@ -203,8 +204,7 @@ function ApprovalsTray({ pending }: { pending: Approval[] }) {
   );
 }
 
-export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onToggleTheme: () => void }) {
-  const inspectorOpen = useUi((u) => (window.innerWidth >= INSPECTOR_DOCK_MIN_PX ? u.inspectorOpen : u.inspectorDrawer));
+export function TopBar({ theme, onToggleTheme, title }: { theme: "dark" | "light"; onToggleTheme: () => void; title: ReactNode }) {
   const store = useStore();
   const env = useAppState((s) => s.environment);
   const envError = useAppState((s) => s.environmentError);
@@ -233,26 +233,12 @@ export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onTo
 
   const hw = hardware ?? env?.hardware ?? null;
   const hwInfo = hardwareState(hw?.state);
-  const boardName = hw?.board?.name ?? null;
-  const boardPart = hw?.board?.part ?? null;
 
   return (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-panel/95 px-3 py-1.5 backdrop-blur">
-      <div className="flex items-center gap-2 pr-2">
-        <svg viewBox="0 0 32 32" className="h-6 w-6" aria-hidden>
-          <rect width="32" height="32" rx="7" className="fill-sunken" />
-          <path d="M9 16a7 7 0 1 1 7 7" fill="none" stroke="rgb(var(--accent))" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="16" cy="23" r="2.5" fill="rgb(var(--ok))" />
-        </svg>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-tight">CircuitLoop</div>
-          <div className="text-[10px] text-muted">
-            {boardName || boardPart ? `${boardName ?? ""}${boardName && boardPart ? " · " : ""}${boardPart ?? ""}` : "FPGA engineering agent"}
-          </div>
-        </div>
-      </div>
+    <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-panel/85 px-4 py-2 backdrop-blur-md">
+      <div className="min-w-0 pr-1">{title}</div>
 
-      <div className="order-last flex min-w-0 flex-1 basis-full flex-wrap items-center gap-0.5 md:order-none md:basis-0">
+      <div className="order-last flex min-w-0 flex-1 basis-full flex-wrap items-center gap-1 xl:order-none xl:basis-0">
         <Popover
           tone={backend.reachable === false ? "bad" : socket.status === "open" ? "ok" : backend.reachable ? "warn" : "idle"}
           pulse={socket.status === "connecting"}
@@ -310,11 +296,11 @@ export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onTo
                 <div className="text-xs text-muted">No hardware status reported yet.</div>
               )}
               <button type="button" className="mt-2 text-[11px] text-accent hover:underline" onClick={() => store.setTab("hardware")}>
-                Open Hardware tab
+                Open the connection details (FPGA Lab)
               </button>
             </Popover>
             <Popover tone={env.llm.configured ? "ok" : "warn"}
-                     label={env.llm.configured ? `Model agent · ${env.llm.model}` : env.llm.key_present ? "Live AI off" : "Offline rules mode"}>
+                     label={env.llm.configured ? `AI · ${env.llm.model.replace(/^claude-/, "Claude ")}` : env.llm.key_present ? "Live AI off" : "Offline rules"}>
               <KV items={[
                 ["Mode", env.llm.configured ? "model-powered agent" : "rules-based offline fallback"],
                 ["Provider", env.llm.provider],
@@ -331,19 +317,12 @@ export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onTo
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-1">
         <Button variant="ghost" size="sm" onClick={() => setUi({ presentation: true })} title="Presentation mode for demos">
           <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
             <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" /><path d="M10 13.5V17M7 17h6" strokeLinecap="round" />
           </svg>
           <span className="hidden md:inline">Present</span>
-        </Button>
-        <Button variant={inspectorOpen ? "secondary" : "ghost"} size="sm" onClick={toggleInspector}
-                title="Show or hide the hardware inspector" aria-pressed={inspectorOpen}>
-          <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-            <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" /><path d="M12.5 3.5v13" />
-          </svg>
-          <span className="hidden md:inline">Hardware</span>
         </Button>
         <ApprovalsTray pending={pending} />
         <Button variant="ghost" size="sm" busy={refreshing} onClick={() => void refresh()} title={env ? `Checked ${fmtAgo(env.checked_at, now)}` : "Refresh environment"}>

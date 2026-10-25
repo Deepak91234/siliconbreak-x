@@ -81,7 +81,7 @@ function XvcPanel({ hw }: { hw: HardwareStatus }) {
 
 function LastProgram({ hw }: { hw: HardwareStatus }) {
   const p = hw.last_program;
-  if (!p) return <p className="text-xs text-muted">The board has not been programmed by CircuitLoop since the backend started.</p>;
+  if (!p) return <p className="text-xs text-muted">The board has not been programmed by SiliconBreak X since the backend started.</p>;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs">

@@ -44,7 +44,7 @@ export function RepoImport() {
   };
 
   return (
-    <section className="rounded-lg border border-line bg-panel p-3.5 shadow-panel" aria-label="Import a repository">
+    <section className="rounded-xl border border-line bg-panel p-4 shadow-panel" aria-label="Import a repository">
       <div className="flex items-start justify-between gap-2">
         <div>
           <span className="text-sm font-medium text-fg">Audit a public repository</span>

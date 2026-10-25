@@ -22,7 +22,7 @@ export function ConnectionBanner() {
     return (
       <div className="flex flex-wrap items-center gap-3 border-b border-bad/30 bg-bad/10 px-4 py-2 text-xs text-bad">
         <Spinner className="h-3.5 w-3.5" />
-        <span className="font-semibold">CircuitLoop backend not reachable.</span>
+        <span className="font-semibold">SiliconBreak X backend not reachable.</span>
         <span className="min-w-0 flex-1 truncate text-bad/80">
           {backend.error ?? "No response from the API."} Start it with <code className="font-mono">scripts/dev.sh</code> (FastAPI on 127.0.0.1:8000); retrying automatically.
         </span>

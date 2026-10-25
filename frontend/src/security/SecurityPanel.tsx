@@ -1,5 +1,5 @@
 /**
- * SiliconBreak X Security tab.
+ * Detailed SiliconBreak X evidence panels, composed by the Security Lab:
  *
  *   contract -> suspected findings (source-linked) -> independent reproduction
  *   (trusted tests, waveform, commands) -> formal check -> repair attempts
@@ -9,65 +9,31 @@
  * and live `security.updated` events; statuses are the backend's, never inferred.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { errorMessage } from "../api/client";
 import { securityApi, type Finding, type RepairAttempt, type SecurityAudit, type SecurityCase, type TestOutcome,
   type VerificationReport } from "../api/security";
-import type { Run } from "../api/types";
-import { StatusIcon } from "../components/StatusIcon";
-import { Button, Card, Collapsible, CopyButton, ErrorNote, Pill, Pre, Segmented, Select, Spinner, cx } from "../components/ui";
-import { fmtDateTime } from "../lib/format";
+import { Button, Card, Collapsible, CopyButton, ErrorNote, Pill, Pre, Segmented, Spinner, cx } from "../components/ui";
 import { highlightLines } from "../lib/highlight";
-import { findingStatus, formalStatus, runStatus, testStatus } from "../lib/status";
+import { findingStatus, formalStatus, testStatus } from "../lib/status";
 import { toast } from "../lib/toast";
 import { useResource } from "../lib/useResource";
 import { useAppState, useStore } from "../store/store";
 import { DiffView, type DiffMode } from "../tabs/DiffView";
-import { CurrentAction } from "../workspace/Timeline";
-import { AICredits, usd, useBudget } from "./AICredits";
-import { HardwareDemo } from "./HardwareDemo";
-import { ProviderStatus } from "./ProviderStatus";
-import { RepoImport } from "./RepoImport";
+import { usd, useBudget } from "./AICredits";
 import { SecurityWave } from "./SecurityWave";
 
-const SOURCE_KIND_LABEL: Record<string, string> = {
+export const SOURCE_KIND_LABEL: Record<string, string> = {
   demo: "demonstration design",
   research_injected: "research-injected defect",
   historical: "historical fix (pinned)",
   benchmark_adapted: "adapted benchmark task",
 };
 
-export function SecurityPanel() {
-  const store = useStore();
-  const projectId = useAppState((s) => s.selection.projectId);
-  const all = useAppState((s) => s.security);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPicked(null);
-    store.loadAudits(projectId ?? undefined).then(() => setLoadErr(null)).catch((e) => setLoadErr(errorMessage(e)));
-  }, [projectId, store]);
-
-  const audits = useMemo(
-    () => Object.values(all).filter((a) => !projectId || a.project_id === projectId).sort((a, b) => b.created_at - a.created_at),
-    [all, projectId],
-  );
-  const audit = audits.find((a) => a.id === picked) ?? audits[0] ?? null;
-
-  if (loadErr) return <ErrorNote error={loadErr} />;
-  if (!projectId || !audit) return <SecurityStart />;
-  return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <AuditHeader audit={audit} audits={audits} onPick={setPicked} />
-      <AuditBody audit={audit} />
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ start
 
-export function SecurityStart({ compact = false }: { compact?: boolean }) {
+/** One card per security case, each starting a free offline audit (investigator choice follows the routing settings). */
+export function SecurityStart() {
   const store = useStore();
   const cases = useResource<SecurityCase[]>("cases", 0, () => securityApi.cases());
   const [busy, setBusy] = useState<string | null>(null);
@@ -82,54 +48,50 @@ export function SecurityStart({ compact = false }: { compact?: boolean }) {
     }
   };
   return (
-    <div className={cx("mx-auto space-y-4", compact ? "" : "max-w-3xl py-4")}>
-      {!compact && (
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">SiliconBreak X security audit</h2>
-          <p className="mt-1 text-sm text-muted">
-            Checks RTL against a written security contract: an investigator proposes suspected weaknesses, a trusted verifier
-            (Verilator tests + Yosys formal) independently reproduces them, a repair agent edits an isolated copy, and the
-            verifier retests the patch. Only verifier results count as evidence.
-          </p>
-        </div>
-      )}
+    <div className="space-y-2">
       {cases.error && <ErrorNote error={cases.error} onRetry={cases.reload} />}
       {!cases.data && !cases.error && <div className="flex items-center gap-2 text-xs text-muted"><Spinner className="h-3.5 w-3.5" /> Loading cases…</div>}
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
         {(cases.data ?? []).map((c) => (
-          <div key={c.case_id} className="rounded-lg border border-line bg-panel p-3.5 shadow-panel">
+          <div key={c.case_id} className="sbx-card-hover flex flex-col rounded-xl border border-line bg-panel p-4 shadow-panel">
             <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium text-fg">{c.title}</span>
+              <span className="text-sm font-semibold text-fg">{c.title}</span>
               <Pill tone={c.source_kind === "historical" ? "info" : "violet"}>{SOURCE_KIND_LABEL[c.source_kind] ?? c.source_kind}</Pill>
             </div>
-            <p className="mt-1 text-xs text-muted">{c.security_contract.summary}</p>
-            <p className="mt-1 text-2xs text-faint">{c.cwe.join(", ")} · {c.tests.length} trusted tests{c.formal.available ? " · formal properties" : ""}</p>
-            <Button className="mt-2.5" size="sm" variant="primary" busy={busy === c.case_id} onClick={() => start(c.case_id)}>
-              Run security audit
-            </Button>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted">{c.security_contract.summary}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {c.cwe.map((w) => <span key={w} className="rounded-md bg-raised px-1.5 py-0.5 font-mono text-[10.5px] text-muted">{w}</span>)}
+              <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] text-muted">{c.tests.length} trusted tests</span>
+              {c.formal.available && <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] text-muted">formal properties</span>}
+              {c.board && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10.5px] text-accent">Basys 3 demo</span>}
+            </div>
+            <div className="mt-auto flex items-center gap-2 pt-3">
+              <Button size="sm" variant="primary" busy={busy === c.case_id} onClick={() => start(c.case_id)}>Run security audit</Button>
+              {(c.audits ?? 0) > 0 && c.latest_audit_id && (
+                <button type="button" className="text-xs text-accent hover:underline" onClick={() => store.selectAudit(c.latest_audit_id!)}>
+                  open latest ({c.audits})
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
-      {!compact && <AICredits />}
-      {!compact && <ProjectAudit />}
-      {!compact && <RepoImport />}
-      {!compact && <ProviderStatus />}
     </div>
   );
 }
 
 /** Audit the selected CircuitLoop design (its generated RTL) against the generic contract. */
-function ProjectAudit() {
+export function ProjectAudit() {
   const store = useStore();
   const projectId = useAppState((s) => s.selection.projectId);
   const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
   const [busy, setBusy] = useState(false);
   if (!projectId || !detail || detail.revisions.length === 0) return null;
   return (
-    <section className="rounded-lg border border-line bg-panel p-3.5 shadow-panel">
+    <section className="rounded-xl border border-line bg-panel p-4 shadow-panel">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <span className="text-sm font-medium text-fg">Audit the current CircuitLoop design</span>
+          <span className="text-sm font-medium text-fg">Audit the current Workspace design</span>
           <p className="mt-0.5 text-xs text-muted">{detail.project.title}: its generated RTL against the generic hardware-security contract.
             Findings stay suspected (no trusted security tests exist for generated designs).</p>
         </div>
@@ -144,12 +106,11 @@ function ProjectAudit() {
 
 // ----------------------------------------------------------------- header
 
-function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: SecurityAudit[]; onPick: (id: string) => void }) {
+/** Re-run and repair actions for an audit (each paid action confirms its worst-case spend first). */
+export function AuditActions({ audit }: { audit: SecurityAudit }) {
   const store = useStore();
-  const run = useAppState((s) => (audit.run_id ? s.runs[audit.run_id] ?? null : null));
   const [busy, setBusy] = useState<string | null>(null);
   const running = audit.status === "running" || audit.status === "created";
-  const rs = runStatus(audit.status);
   const c = audit.record.case;
   const canRepair = !running && !!audit.record.reproduction && audit.record.reproduction.security_status === "failed";
   const budget = useBudget(audit.record.repairs.length);
@@ -181,125 +142,41 @@ function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: 
     }
   };
   return (
-    <section className="space-y-3 rounded-lg border border-line bg-panel p-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-tight">{c.title}</h2>
-            <Pill tone={rs.tone}>{rs.label}</Pill>
-            <Pill tone="violet">{SOURCE_KIND_LABEL[c.source_kind] ?? c.source_kind}</Pill>
-          </div>
-          <p className="mt-1 text-xs text-muted">{audit.record.outcome.summary || "Audit running…"}</p>
-        </div>
-        {audits.length > 1 && (
-          <Select value={audit.id} onChange={onPick} className="max-w-[16rem]">
-            {audits.map((a) => <option key={a.id} value={a.id}>{fmtDateTime(a.created_at)} · {runStatus(a.status).label}</option>)}
-          </Select>
-        )}
-      </div>
-      {run && running && <CurrentAction run={run as Run} compact />}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="secondary" disabled={running} busy={busy === "new"}
-                onClick={() => act("new", () => {
-                  const fs = audit.record.fileset;
-                  if (fs?.kind === "repository" && fs.repo_id) return store.startRepoAudit(fs.repo_id, fs.audited_files);
-                  if (fs?.kind === "project") return store.startProjectAudit(audit.project_id);
-                  return store.startSecurityAudit(audit.case_id ?? "");
-                })}>
-          Run audit again
-        </Button>
-        {!audit.case_id && <span className="text-2xs text-faint">Repairs need a case with trusted tests; this audit can only suspect.</span>}
-        {audit.case_id && <span className="mx-1 h-4 w-px bg-line" aria-hidden />}
-        {audit.case_id && <>
-        <Button size="sm" variant="primary" disabled={!canRepair} busy={busy === "factory"}
-                title="Factory Droid edits an isolated copy; the trusted verifier judges the patch"
-                onClick={() => confirmSpend("factory") && act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
-          Repair with Factory Droid
-        </Button>
-        <Button size="sm" variant="secondary" disabled={!canRepair} busy={busy === "model"}
-                title="A model provider (Bitdeer or Claude) proposes a full-file patch"
-                onClick={() => confirmSpend("model") && act("model", () => securityApi.repair(audit.id, "model").then((r) => store.putAudit(r.audit)))}>
-          Repair with model
-        </Button>
-        <Button size="sm" variant="ghost" disabled={!canRepair || !c.has_reference_fix} busy={busy === "reference"}
-                title="Run the human-written reference fix through the verifier to show the harness can tell right from wrong"
-                onClick={() => act("reference", () => securityApi.repair(audit.id, "reference").then((r) => store.putAudit(r.audit)))}>
-          Validate harness (reference fix)
-        </Button>
-        </>}
-      </div>
-    </section>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="secondary" disabled={running} busy={busy === "new"}
+              onClick={() => act("new", () => {
+                const fs = audit.record.fileset;
+                if (fs?.kind === "repository" && fs.repo_id) return store.startRepoAudit(fs.repo_id, fs.audited_files);
+                if (fs?.kind === "project") return store.startProjectAudit(audit.project_id);
+                return store.startSecurityAudit(audit.case_id ?? "");
+              })}>
+        Run audit again
+      </Button>
+      {!audit.case_id && <span className="text-2xs text-faint">Repairs need a case with trusted tests; this audit can only suspect.</span>}
+      {audit.case_id && <>
+      <Button size="sm" variant="primary" disabled={!canRepair} busy={busy === "factory"}
+              title={canRepair ? "Factory Droid edits an isolated copy; the trusted verifier judges the patch" : "Needs a reproduced vulnerability"}
+              onClick={() => confirmSpend("factory") && act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
+        Repair with Factory Droid
+      </Button>
+      <Button size="sm" variant="secondary" disabled={!canRepair} busy={busy === "model"}
+              title="A model provider (Bitdeer or Claude) proposes a full-file patch"
+              onClick={() => confirmSpend("model") && act("model", () => securityApi.repair(audit.id, "model").then((r) => store.putAudit(r.audit)))}>
+        Repair with model
+      </Button>
+      <Button size="sm" variant="ghost" disabled={!canRepair || !c.has_reference_fix} busy={busy === "reference"}
+              title="Run the human-written reference fix through the verifier to show the harness can tell right from wrong"
+              onClick={() => act("reference", () => securityApi.repair(audit.id, "reference").then((r) => store.putAudit(r.audit)))}>
+        Validate harness (reference fix)
+      </Button>
+      </>}
+    </div>
   );
 }
 
 // ------------------------------------------------------------------- body
 
-function AuditBody({ audit }: { audit: SecurityAudit }) {
-  const r = audit.record;
-  const c = r.case;
-  const [selTest, setSelTest] = useState<{ report: VerificationReport; test: TestOutcome } | null>(null);
-  useEffect(() => setSelTest(null), [audit.id]);
-  const firstFail = r.reproduction?.tests.find((t) => t.status === "fail");
-  const shown = selTest ?? (r.reproduction && firstFail ? { report: r.reproduction, test: firstFail } : null);
-  return (
-    <>
-      <Pipeline audit={audit} />
-      {r.fileset && <ScopeCard audit={audit} />}
-      <ContractCard c={c} />
-      <FindingsCard audit={audit} />
-      {r.reproduction && (
-        <Card title="Independent reproduction · trusted verifier" actions={<VerifyBadge report={r.reproduction} />}>
-          <TestTable report={r.reproduction} selected={shown?.report === r.reproduction ? shown.test.id : null}
-                     onSelect={(t) => setSelTest({ report: r.reproduction!, test: t })} />
-          {shown && shown.report === r.reproduction && <TestWave audit={audit} report={shown.report} test={shown.test} />}
-          <Commands report={r.reproduction} />
-        </Card>
-      )}
-      {r.formal_original && <FormalCard title="Formal property check · original design" f={r.formal_original} />}
-      {r.repairs.map((a) => (
-        <RepairCard key={a.attempt} audit={audit} attempt={a} selected={shown?.report === a.verification ? shown.test.id : null}
-                    onSelect={(t) => a.verification && setSelTest({ report: a.verification, test: t })} />
-      ))}
-      {shown && r.repairs.some((a) => a.verification === shown.report) && (
-        <TestWave audit={audit} report={shown.report} test={shown.test} />
-      )}
-      {audit.case_id && c.board && <HardwareDemo audit={audit} />}
-      <EvidenceCard audit={audit} />
-      <AICredits />
-      <ProviderStatus />
-      <Card title="Limitations">
-        <ul className="list-disc space-y-1 pl-4 text-xs text-muted">
-          <li>Results cover this case's written contract and its trusted tests and properties only, not the whole design or chip.</li>
-          <li>A formal proof holds for the property wrapper's assertions under its assumptions (reset in the first cycle).</li>
-          <li>Findings are suspicions until the verifier reproduces them; offline static rules are pattern matches, not AI.</li>
-          <li>{c.provenance}</li>
-          <li>Physical FPGA behaviour is not claimed here; programming the board needs your approval and a connected Basys 3.</li>
-        </ul>
-      </Card>
-    </>
-  );
-}
-
-function Pipeline({ audit }: { audit: SecurityAudit }) {
-  const run = useAppState((s) => (audit.run_id ? s.runs[audit.run_id] ?? null : null));
-  if (!run) return null;
-  return (
-    <ol className="grid grid-cols-2 gap-1.5 sm:grid-cols-4" aria-label="Audit stages">
-      {run.stages.map((s) => (
-        <li key={s.key} title={s.summary ?? ""} className={cx("rounded-md border px-2.5 py-1.5",
-          s.status === "running" ? "border-accent/50 bg-accent/5" : "border-line bg-panel")}>
-          <div className="flex items-center gap-1.5">
-            <StatusIcon status={s.status} className="h-3.5 w-3.5" />
-            <span className="truncate text-xs font-medium">{s.label}</span>
-          </div>
-          <p className="mt-0.5 line-clamp-2 text-2xs text-muted">{s.summary || s.status}</p>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function ContractCard({ c }: { c: SecurityCase }) {
+export function ContractCard({ c }: { c: SecurityCase }) {
   return (
     <Card title="Security contract" actions={<span className="text-2xs text-faint">{c.cwe.join(" · ")}</span>}>
       <p className="text-sm text-fg">{c.security_contract.summary}</p>
@@ -331,7 +208,7 @@ function ContractCard({ c }: { c: SecurityCase }) {
   );
 }
 
-function ScopeCard({ audit }: { audit: SecurityAudit }) {
+export function ScopeCard({ audit }: { audit: SecurityAudit }) {
   const fs = audit.record.fileset!;
   return (
     <Card title={fs.kind === "repository" ? "Repository scope" : "Design scope"}
@@ -357,7 +234,7 @@ function ScopeCard({ audit }: { audit: SecurityAudit }) {
   );
 }
 
-function FindingsCard({ audit }: { audit: SecurityAudit }) {
+export function FindingsCard({ audit }: { audit: SecurityAudit }) {
   const r = audit.record;
   const inv = r.investigation;
   const src = useResource(audit.id, 0, (sig) => securityApi.sources(audit.id, undefined, sig));
@@ -389,7 +266,7 @@ function FindingsCard({ audit }: { audit: SecurityAudit }) {
   );
 }
 
-function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | null }) {
+export function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | null }) {
   const st = findingStatus(f.status);
   const text = files?.[f.file];
   const lines = useMemo(() => (text ? highlightLines(text, "verilog") : null), [text]);
@@ -413,7 +290,7 @@ function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | 
             const on = n >= f.line_start && n <= f.line_end;
             return (
               <div key={n} className={cx("flex", on && "bg-bad/15")}>
-                <span className="w-9 select-none pr-2 text-right text-faint">{n}</span>
+                <span className="w-9 shrink-0 select-none pr-2 text-right text-faint">{n}</span>
                 <span className="hljs whitespace-pre" dangerouslySetInnerHTML={{ __html: html || "&nbsp;" }} />
               </div>
             );
@@ -435,7 +312,7 @@ function FindingRow({ f, files }: { f: Finding; files: Record<string, string> | 
   );
 }
 
-function VerifyBadge({ report }: { report: VerificationReport }) {
+export function VerifyBadge({ report }: { report: VerificationReport }) {
   const c = { s: report.tests.filter((t) => t.kind === "security"), f: report.tests.filter((t) => t.kind === "functional") };
   const pass = (xs: TestOutcome[]) => xs.filter((t) => t.status === "pass").length;
   return (
@@ -450,7 +327,7 @@ function VerifyBadge({ report }: { report: VerificationReport }) {
   );
 }
 
-function TestTable({ report, selected, onSelect }: { report: VerificationReport; selected: string | null; onSelect: (t: TestOutcome) => void }) {
+export function TestTable({ report, selected, onSelect }: { report: VerificationReport; selected: string | null; onSelect: (t: TestOutcome) => void }) {
   if (report.status === "error" || report.status === "timeout" || report.status === "not_run") {
     return (
       <div className="space-y-1 text-xs">
@@ -490,7 +367,7 @@ function TestTable({ report, selected, onSelect }: { report: VerificationReport;
   );
 }
 
-function TestWave({ audit, report, test }: { audit: SecurityAudit; report: VerificationReport; test: TestOutcome }) {
+export function TestWave({ audit, report, test }: { audit: SecurityAudit; report: VerificationReport; test: TestOutcome }) {
   if (!report.vcd || !report.dir || !test.span_ns) return null;
   const ports = audit.record.case.interface.filter((p) => p.port !== "clk").map((p) => `tb.${p.port}`);
   const [a, b] = test.span_ns;
@@ -508,7 +385,7 @@ function TestWave({ audit, report, test }: { audit: SecurityAudit; report: Verif
   );
 }
 
-function Commands({ report }: { report: VerificationReport }) {
+export function Commands({ report }: { report: VerificationReport }) {
   return (
     <Collapsible title={<span className="text-xs">Exact commands, tool versions and hashes</span>}>
       <ul className="space-y-1">
@@ -528,7 +405,7 @@ function Commands({ report }: { report: VerificationReport }) {
   );
 }
 
-function FormalCard({ title, f }: { title: string; f: NonNullable<SecurityAudit["record"]["formal_original"]> }) {
+export function FormalCard({ title, f }: { title: string; f: NonNullable<SecurityAudit["record"]["formal_original"]> }) {
   const st = formalStatus(f.status);
   const sigs = f.counterexample.length ? Object.keys(f.counterexample[0].signals).filter((k) => k !== "clk") : [];
   return (
@@ -553,7 +430,7 @@ function FormalCard({ title, f }: { title: string; f: NonNullable<SecurityAudit[
   );
 }
 
-function RepairCard({ audit, attempt: a, selected, onSelect }: { audit: SecurityAudit; attempt: RepairAttempt; selected: string | null;
+export function RepairCard({ audit, attempt: a, selected, onSelect }: { audit: SecurityAudit; attempt: RepairAttempt; selected: string | null;
   onSelect: (t: TestOutcome) => void }) {
   const [mode, setMode] = useState<DiffMode>("unified");
   const verdictTone = a.verdict === "verified" ? "ok" : a.verdict === "no_patch" ? "orange" : "bad";
@@ -608,7 +485,7 @@ function RepairCard({ audit, attempt: a, selected, onSelect }: { audit: Security
   );
 }
 
-function ArtifactLinks({ audit, paths }: { audit: SecurityAudit; paths: string[] }) {
+export function ArtifactLinks({ audit, paths }: { audit: SecurityAudit; paths: string[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const res = useResource(open ? `${audit.id}:${open}` : null, 0, (sig) => securityApi.file(audit.id, open!, sig));
   return (
@@ -626,7 +503,7 @@ function ArtifactLinks({ audit, paths }: { audit: SecurityAudit; paths: string[]
   );
 }
 
-function EvidenceCard({ audit }: { audit: SecurityAudit }) {
+export function EvidenceCard({ audit }: { audit: SecurityAudit }) {
   const ev = audit.record.evidence;
   if (!ev) return null;
   return (

@@ -7,7 +7,7 @@ bug is a suspicion; only the trusted verifier's result is evidence.**
 ## Pipeline
 
 ```text
-Security tab / POST /api/security/audits
+Security Lab / POST /api/security/audits
         │
         ▼  (a CircuitLoop run with these stages; events over /ws/events)
 contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retest ─ evidence
@@ -33,7 +33,7 @@ contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retes
 | `backend/security/repair.py` | Isolated workspaces (editable RTL + `TASK.md` only), Factory Droid session with an allowlist permission handler, model-patch repair, human reference fix, scope detection and diffs |
 | `backend/security/orchestrator.py` | The audit run and the finding status ladder |
 | `backend/security/bench.py` | SiliconBench arms and metrics |
-| `frontend/src/security/` | Security tab, SiliconBench view, provider status, waveform |
+| `frontend/src/security/`, `frontend/src/fpga/`, `frontend/src/shell/` | Dashboard, Security Lab, SiliconBench, FPGA Lab, sidebar shell |
 
 ## Trust boundary
 
@@ -112,7 +112,7 @@ next to the contract and the board-level simulation (`backend/security/board_vis
   running) or *inconclusive* (a step missing or unreadable).
 - **Evidence.** `fpga/<variant>/camera/<session>/observation.json`, `frames.csv` (per-frame levels of all 16 LEDs) and
   `snapshots/<step>_<n>.jpg` (a frame from inside the step window with the cells drawn green/grey for the reading). The
-  result is appended to `record.fpga.<variant>.observations` and shown under the variant in the Security tab.
+  result is appended to `record.fpga.<variant>.observations` and shown under the variant in the FPGA Lab and on the Dashboard.
 
 Tested with the synthetic board renderer (vulnerable leak observed, patched contract met, board/simulation mismatch, missing
 step, dark scene, short capture) and through the real HTTP + WebSocket API; checked in the dashboard with a canvas standing in
@@ -123,7 +123,7 @@ for the webcam. Not yet run with the real webcam on the real board.
 Sponsor credits: Claude $50, Bitdeer $50, Factory Pro (one month; a $20 voucher is not assumed). Every paid call goes
 through `backend/core/budget.py`, including CircuitLoop's own design agent:
 
-* **Live AI is off until you turn it on** (Security tab or SiliconBench → *AI credits* → *Turn on live AI*, which
+* **Live AI is off until you turn it on** (Security Lab or SiliconBench → *AI credits* → *Turn on live AI*, which
   shows the caps and asks for confirmation). While off, keys may be present but no request is sent: investigations
   use the offline rules (labelled not AI) and only the human reference fix can run.
 * **Worst-case reservation before each call:** input estimated at 3 characters per token (high) plus `max_tokens` at
@@ -272,11 +272,26 @@ GET  /api/bench/runs, /api/bench/runs/{id}
 Live progress: the existing `/ws/events` stream (`run.*`, `stage.updated`, `log`,
 `agent.message`, plus `security.updated` and `bench.updated`).
 
+## Dashboard layout
+
+The frontend is branded SiliconBreak X (dark theme by default, light theme on the top-bar toggle) with five sections in
+the sidebar:
+
+| Section | What it holds |
+|---|---|
+| **Dashboard** | The featured audit (the open one, else the latest verified repair): five-stage pipeline (investigate, reproduce, repair, verify, FPGA test) with durations, evidence level (suspected → reproduced → repaired → independently verified → physically observed), headline numbers, vulnerability with source, AI analysis (findings, explanation, waveform, patch), repair and verifier checklist; an FPGA rail with recorded webcam evidence, the board twin and the test guide; latest SiliconBench run, environment, recent audits |
+| **Security Lab** | Start audits (cases, public repositories, Workspace designs), all audits with their evidence level, and the full audit view with every piece of evidence (trusted tests + waveforms, formal, each repair attempt, contract, evidence record with hashes, report export) and the repair actions with credit confirmation |
+| **SiliconBench** | Free and paid arms, worst-case estimate, metric rings, per-arm comparison and per-case results |
+| **FPGA Lab** | Board connection, what was last programmed (latest executed program approval, so audit and design records never disagree), the security demo on the 2D/3D twin with LEDs from the contract, the board-level simulation or the webcam (always labelled), build / approval-gated programming / webcam evidence per variant, the Workspace design's hardware inspector, and connection details |
+| **Workspace** | The complete CircuitLoop experience: chat (project creation, follow-ups, history), Agent timeline, Code, Simulation (waveforms), Diagram, Vivado / Build, Camera, Revisions, and the hardware inspector |
+
+Every number, status and LED pattern comes from stored records or live events; with no data the page says so.
+
 ## Running it
 
 ```bash
-./scripts/dev.sh            # restart it if it was already running: the backend has new routes
-# open http://127.0.0.1:5173, then Security tab (or "Audit" beside the project picker)
+./scripts/dev.sh            # restart it if it was already running
+# open http://127.0.0.1:5173 (Dashboard; Security Lab, SiliconBench, FPGA Lab and Workspace in the sidebar)
 .venv/bin/python -m pytest -q tests/test_security.py
 ```
 
@@ -290,7 +305,7 @@ FACTORY_API_KEY=...        # Factory Droid; also install the droid CLI so `droid
 
 ## Demo script (three clicks)
 
-1. Security tab → **Run security audit** on *Debug-mode access-control bypass*. Watch the stages:
+1. Security Lab → **Run security audit** on *Debug-mode access-control bypass*. Watch the stages:
    the suspected finding at `rtl/debug_access_ctrl.v:49`, then 4 trusted security tests failing
    (functional 7/7 still passing), the waveform of `S-UNAUTH-DEBUG-READ` showing `read_grant`
    and `0xA5` with `authorized = 0`, and the 3-step formal counterexample.
@@ -299,7 +314,7 @@ FACTORY_API_KEY=...        # Factory Droid; also install the droid CLI so `droid
    the human reference, labelled as such, showing the verifier accepts a correct fix (12/12, proven).
 3. SiliconBench → **Run SiliconBench**: harness 3/3, reproduction 3/3, formal 3/3, offline rules
    detect 1/3; model and Droid arms show "not run" until keys are configured.
-4. Back in the audit, **Basys 3 before / after → Simulate + build** on *before* and *after*: the demo-step table shows D1 leaking
+4. FPGA Lab (or **Open in FPGA Lab** from the audit) → **Simulate + build** on *before* and *after*: the demo-step table shows D1 leaking
    `0xA5` on the vulnerable board top and denying on the fixed one (simulation). With Vivado running and the board connected,
    **Program…** each one (approval) and press BTNU with SW1 off, SW2 on, SW3 on: the vulnerable board lights LED15 and the
    secret on LED7–LED0, the fixed board lights LED14 only. After each programming, **Verify with webcam** records it:
@@ -324,7 +339,7 @@ Not yet run (needs you):
 | Claude investigation / model repair | no `ANTHROPIC_API_KEY` | add key, restart, **Repair with model** |
 | Factory Droid repair | `droid` CLI 0.249.0 is now installed (`~/.local/bin/droid`); no `FACTORY_API_KEY` | log the CLI in or set `FACTORY_API_KEY`, then **Repair with Factory Droid** (explicit click). Automatic repairs during an audit use Droid only when `FACTORY_API_KEY` is set. The attempt shows the session id, trace and refused actions |
 | Baseline vs assisted comparison | needs a model key | **Run SiliconBench** after adding a key |
-| Basys 3 before/after: Vivado build | done in the isolated `siliconbreak_vivado` (see above) | rebuild from the Security tab after an agent repair to get an agent-patched *after* |
+| Basys 3 before/after: Vivado build | done in the isolated `siliconbreak_vivado` (see above) | rebuild from the FPGA Lab after an agent repair to get an agent-patched *after* |
 | Basys 3 before/after: programming | done (see the end-to-end run above) | |
 | Webcam evidence on the real board | not run yet | program a variant, **Verify with webcam**, capture the dark reference and D1-D4, **Finish** |
 | Historical cases from public repositories | no case manifest with trusted tests written yet | a pinned historical case needs a contract, a trusted testbench and its fix commit; repository audits today stop at *suspected* |

@@ -94,7 +94,7 @@ export function ObservationTable({ obs, auditId }: { obs: BoardObservation; audi
       )}
       <p className="text-2xs text-faint">
         {obs.frames_recorded} frames · {obs.method}. Bitstream {obs.programmed.bitstream_sha256?.slice(0, 12)}… was programmed by
-        CircuitLoop {obs.programmed.at ? fmtDateTime(obs.programmed.at) : ""} (approval {obs.programmed.approval_id}).
+        SiliconBreak X {obs.programmed.at ? fmtDateTime(obs.programmed.at) : ""} (approval {obs.programmed.approval_id}).
         {obs.dir ? ` Evidence: ${obs.dir}/observation.json, frames.csv, snapshots/.` : ""}
       </p>
     </div>
@@ -238,7 +238,7 @@ export function BoardCamera({ auditId, variant, label, onClose }: { auditId: str
       {sess && sess.status !== "finished" && (
         <div className="space-y-3">
           <p className="text-2xs text-ok">
-            CircuitLoop programmed this bitstream ({sess.programmed.bitstream_sha256?.slice(0, 12)}…) {sess.programmed.at ? fmtDateTime(sess.programmed.at) : ""}.
+            SiliconBreak X programmed this bitstream ({sess.programmed.bitstream_sha256?.slice(0, 12)}…) {sess.programmed.at ? fmtDateTime(sess.programmed.at) : ""}.
             If the board was power-cycled since, it no longer holds it; the comparison with simulation will show that.
           </p>
           {camera.error && <p className="rounded-md border border-bad/30 bg-bad/10 px-3 py-2 text-xs text-bad">{camera.error}</p>}

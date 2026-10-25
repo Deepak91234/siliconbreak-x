@@ -123,7 +123,7 @@ export function PresentationView() {
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-bg text-fg">
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-2.5">
-        <span className="text-sm font-semibold tracking-tight">CircuitLoop</span>
+        <span className="text-sm font-semibold tracking-tight">SiliconBreak X</span>
         <span className="text-xs text-faint">Presentation</span>
         {isReplay ? (
           <Pill tone="violet">REPLAY · recorded {fmtDateTime(replayRun?.created_at)}</Pill>
@@ -152,13 +152,13 @@ export function PresentationView() {
       ) : (
         <main className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 xl:grid-cols-[1.25fr_1fr]">
           <div className="space-y-4">
-            <section className="rounded-lg border border-line bg-panel p-4">
+            <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
               <div className="text-2xs uppercase tracking-wide text-faint">Instruction</div>
               <p className="mt-1 text-lg font-medium leading-snug">“{instruction}”</p>
             </section>
             {runForAction && <CurrentAction run={runForAction} showTimer={!isReplay} />}
             {lastAgent && (
-              <section className="rounded-lg border border-line bg-panel p-4">
+              <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
                 <div className="text-2xs uppercase tracking-wide text-faint">Agent</div>
                 <p className="mt-1 line-clamp-4 whitespace-pre-line text-sm text-muted">{lastAgent.text}</p>
               </section>
@@ -176,7 +176,7 @@ export function PresentationView() {
             {isReplay && <p className="text-2xs text-faint">Replay of persisted backend events; idle gaps longer than {GAP_CAP_S} s are shortened.</p>}
             {replay.error && <p className="text-xs text-bad">{replay.error}</p>}
             {reached("rtl") && revisionId && (
-              <section className="rounded-lg border border-line bg-panel p-4">
+              <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
                 <div className="mb-2 text-2xs uppercase tracking-wide text-faint">Circuit</div>
                 <DiagramView revisionId={revisionId} />
               </section>
@@ -200,7 +200,7 @@ function SimResult({ revisionId }: { revisionId: string }) {
   const sim = res.data?.simulation;
   if (!sim) return null;
   return (
-    <section className="rounded-lg border border-line bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
       <div className="text-2xs uppercase tracking-wide text-faint">Simulation (Verilator)</div>
       <div className="mt-1 flex items-baseline gap-3">
         <span className={cx("text-3xl font-semibold tabular-nums", sim.failed_checks ? "text-bad" : "text-ok")}>{sim.passed_checks}</span>
@@ -221,7 +221,7 @@ function VerifyResult({ revisionId }: { revisionId: string }) {
   const res = useResource(revisionId, 0, (sig) => api.revision(revisionId, sig));
   const v = res.data?.verification as { status?: string; summary?: string; programmed_by_circuitloop?: boolean } | null | undefined;
   return (
-    <section className="rounded-lg border border-line bg-panel p-4">
+    <section className="rounded-xl border border-line bg-panel shadow-panel p-4">
       <div className="text-2xs uppercase tracking-wide text-faint">Physical verification (webcam)</div>
       {v?.status ? (
         <>

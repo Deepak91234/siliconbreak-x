@@ -23,6 +23,7 @@ import { highlight, setUi, useUi, type BoardMode } from "../lib/ui";
 import { useResource } from "../lib/useResource";
 import { effectiveRevisionId } from "../store/reducer";
 import { useAppState, useStore } from "../store/store";
+import { latestProgram } from "../security/derive";
 import { ThreeDBoundary, ThreeDUnavailable, webglAvailable } from "./WebGLFallback";
 
 const Board3D = lazy(() => import("../board/Board3D"));
@@ -43,6 +44,7 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
   const revisionId = useAppState(effectiveRevisionId);
   const version = useAppState((s) => (revisionId ? s.revisionVersions[revisionId] ?? 0 : 0));
   const hw = useAppState((s) => s.hardware);
+  const approvals = useAppState((s) => s.approvals);
 
   const board = useResource("board", 0, () => api.board());
   const examples = useResource("examples", 0, () => api.examples());
@@ -91,6 +93,10 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
   }, [guide, ext, step, mode, simKind, replay, virtual, observed]);
 
   const programmed = !!guide?.programmed_by_circuitloop;
+  // The revision's "programmed" status is historical; the board holds whatever CircuitLoop wrote last.
+  const hold = latestProgram(approvals);
+  const onBoard = programmed && (!hold || hold.revisionId === revisionId);
+  const holdElsewhere = programmed && !!hold && hold.revisionId !== revisionId;
   const hwInfo = hardwareState(hw?.state);
 
   return (
@@ -99,8 +105,10 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
         <h2 className="text-sm font-semibold">Hardware</h2>
         <Pill tone={hwInfo.tone} title={hw?.message ?? ""}>{hw ? hwInfo.label : "checking…"}</Pill>
         {mode !== "preview" && guide && !guide.preview && (
-          <Pill tone={programmed ? "ok" : "idle"} title="Confirmed by the backend after an approved programming run">
-            {programmed ? `r${guide.revision_number} programmed` : "not programmed"}
+          <Pill tone={onBoard ? "ok" : holdElsewhere ? "warn" : "idle"}
+                title={holdElsewhere ? `r${guide.revision_number} was programmed earlier; the last bitstream SiliconBreak X wrote is ${hold?.auditId ? `the security demo (${hold.variant}, audit ${hold.auditId})` : `another revision (${hold?.revisionId})`}`
+                  : "Confirmed by the backend after an approved programming run"}>
+            {onBoard ? `r${guide.revision_number} on the board` : holdElsewhere ? `r${guide.revision_number} programmed earlier` : "not programmed"}
           </Pill>
         )}
         <div className="ml-auto flex items-center gap-1">
@@ -152,7 +160,7 @@ export function HardwareInspector({ onClose }: { onClose?: () => void }) {
                                                       scenario={scenario} setScenario={setScenario} replay={replay} virtual={virtual}
                                                       revisionId={revisionId} />}
 
-        {mode === "live" && <LiveStatus programmed={programmed} guide={guide} observed={observed}
+        {mode === "live" && <LiveStatus programmed={programmed} holdElsewhere={holdElsewhere ? (hold?.auditId ? `the security demo (${hold.variant})` : "another revision") : null} guide={guide} observed={observed}
                                          onProgram={async () => {
                                            if (!revisionId) return;
                                            try { await api.program(revisionId); toast("Programming approval requested: see the chat.", "info"); }
@@ -260,8 +268,9 @@ function InputTimeline({ trace, t }: { trace: NonNullable<ReturnType<typeof useR
   );
 }
 
-function LiveStatus({ programmed, guide, observed, onProgram, onCamera }: {
+function LiveStatus({ programmed, holdElsewhere, guide, observed, onProgram, onCamera }: {
   programmed: boolean;
+  holdElsewhere: string | null;
   guide: Guide | null;
   observed: ReturnType<typeof useObserved>;
   onProgram: () => void;
@@ -281,14 +290,19 @@ function LiveStatus({ programmed, guide, observed, onProgram, onCamera }: {
       ) : null}
       {!programmed ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted">This revision has not been programmed by CircuitLoop.</span>
+          <span className="text-muted">This revision has not been programmed by SiliconBreak X.</span>
           <Button size="sm" onClick={onProgram} disabled={!guide || guide.build_status !== "passed"}
                   title={guide?.build_status !== "passed" ? "Needs a passing Vivado build" : "Requests your approval in the chat"}>
             Program FPGA…
           </Button>
         </div>
+      ) : holdElsewhere ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-warn">This revision was programmed earlier, but the last bitstream SiliconBreak X wrote is {holdElsewhere}.</span>
+          <Button size="sm" onClick={onProgram} disabled={!guide || guide.build_status !== "passed"} title="Requests your approval in the chat">Program again…</Button>
+        </div>
       ) : (
-        <p className="text-ok">Programmed: the backend confirmed the bitstream load for this revision.</p>
+        <p className="text-ok">Programmed: the backend confirmed the bitstream load for this revision, and nothing else has been programmed since.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
         {observed.sessionId ? (
@@ -320,7 +334,7 @@ function GuideSteps({ guide, loading, error, notFound, hasRevision, mode, stepId
   return (
     <section aria-label="Operating guide">
       <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+        <h3 className="text-sm font-semibold text-fg">
           {mode === "live" ? "Guided hardware mode" : "How to operate this design"}
         </h3>
         <div className="flex gap-1">

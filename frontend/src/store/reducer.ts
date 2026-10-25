@@ -25,7 +25,7 @@ import type { SecurityAudit } from "../api/security";
 import type { SocketInfo } from "../api/events";
 
 export type TabKey = "pipeline" | "verilog" | "simulation" | "diagram" | "vivado" | "hardware" | "vision" | "history"
-  | "security" | "bench";
+  | "dashboard" | "security" | "bench" | "fpga";
 
 export interface LogLine {
   seq: number;
@@ -59,6 +59,8 @@ export interface Selection {
   tab: TabKey;
   /** History "compare": the Verilog tab opens a diff of revisionId against this. */
   compareAgainst: string | null;
+  /** Security Lab / FPGA Lab: the open audit (null = overview / latest board-capable audit). */
+  auditId: string | null;
 }
 
 export interface AppState {
@@ -108,7 +110,7 @@ export function initialState(): AppState {
     revisionVersions: {},
     vision: {},
     security: {},
-    selection: { projectId: null, revisionId: null, runId: null, tab: "pipeline", compareAgainst: null },
+    selection: { projectId: null, revisionId: null, runId: null, tab: "dashboard", compareAgainst: null, auditId: null },
     lastEventAt: null,
     faults: null,
     faultsError: null,

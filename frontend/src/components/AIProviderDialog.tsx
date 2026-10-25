@@ -42,7 +42,7 @@ export function AIProviderDialog({ open, onClose }: { open: boolean; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ai-dialog-title"
-           className="w-full max-w-lg rounded-lg border border-line bg-panel p-5 shadow-pop outline-none" onClick={(e) => e.stopPropagation()}>
+           className="w-full max-w-lg rounded-xl border border-line bg-panel p-5 shadow-pop outline-none" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="ai-dialog-title" className="text-base font-semibold">AI agent mode</h2>

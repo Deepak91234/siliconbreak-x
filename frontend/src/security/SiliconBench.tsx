@@ -4,9 +4,10 @@
  * not-run counts are always shown, and a provider without a key is NOT RUN, never 0%.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "../api/client";
 import { securityApi, type BenchCaseResult, type BenchEstimate, type BenchRun } from "../api/security";
+import { IconBars } from "../components/icons";
 import { Button, Card, Collapsible, Empty, ErrorNote, Pill, Select, Spinner, cx } from "../components/ui";
 import { fmtDateTime } from "../lib/format";
 import { toast } from "../lib/toast";
@@ -79,80 +80,145 @@ export function SiliconBench() {
     }
   };
 
+  const paidSel = ARMS.filter((a) => a.paid && arms.includes(a.id)).length;
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <section className="rounded-lg border border-line bg-panel p-4">
-        <div className="flex flex-wrap items-start gap-3">
+    <div className="space-y-5">
+      <section className="sbx-hero rounded-2xl border border-line p-6 shadow-panel">
+        <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold tracking-tight">SiliconBench</h2>
-            <p className="mt-1 text-xs text-muted">
-              Runs every security case through the same trusted verifier: harness validity, detection by each investigator, and
-              repair by a single-shot model, the same model with the verifier loop, and Factory Droid. Arms without a configured
-              provider are reported as not run. Demo and locally authored cases are labelled and are not historical-vulnerability results.
+            <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-accent">SiliconBench</div>
+            <h2 className="mt-1 text-3xl font-semibold tracking-tight">Benchmark <span className="sbx-gradient-text">AI security agents</span> on the same verifier</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">
+              Every case runs through one trusted harness: harness validity, detection by each investigator, and repair by a single-shot
+              model, the same model with the verifier loop, and Factory Droid. Arms without a configured provider are reported as
+              <span className="font-medium text-orange"> not run</span>, never as 0%. Demo and locally authored cases are labelled and are not
+              historical-vulnerability results.
             </p>
           </div>
-          {runs && runs.length > 1 && (
-            <Select value={run?.id ?? ""} onChange={setPicked} className="max-w-[16rem]">
-              {runs.map((r) => <option key={r.id} value={r.id}>{fmtDateTime(r.created_at)} · {r.status}</option>)}
-            </Select>
-          )}
-          <Button variant="primary" size="sm" busy={starting} disabled={run?.status === "running" || arms.length === 0} onClick={start}>
-            Run SiliconBench{est?.paid ? ` (≤ ${usd(est.usd_total)}${est.droid_sessions ? `, ${est.droid_sessions} Droid` : ""})` : ""}
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            {runs && runs.length > 1 && (
+              <Select value={run?.id ?? ""} onChange={setPicked} className="max-w-[16rem]">
+                {runs.map((r) => <option key={r.id} value={r.id}>{fmtDateTime(r.created_at)} · {r.status}</option>)}
+              </Select>
+            )}
+            <Button variant="primary" busy={starting} disabled={run?.status === "running" || arms.length === 0} onClick={start}>
+              Run SiliconBench{est?.paid ? ` (≤ ${usd(est.usd_total)}${est.droid_sessions ? `, ${est.droid_sessions} Droid` : ""})` : " (free)"}
+            </Button>
+          </div>
         </div>
-        <fieldset className="mt-3 grid gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Benchmark arms">
-          {ARMS.map((a) => (
-            <label key={a.id} className="flex items-center gap-2 text-xs">
-              <input type="checkbox" checked={arms.includes(a.id)} className="accent-[rgb(var(--accent))]"
-                     onChange={(ev) => setArms((xs) => ev.target.checked ? [...xs, a.id] : xs.filter((x) => x !== a.id))} />
-              <span className={a.paid ? "text-fg" : "text-muted"}>{a.label}</span>
-              {a.paid && <span className="rounded bg-warn/15 px-1 text-2xs text-warn">paid</span>}
-            </label>
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">
+          {([["Free arms", false], ["Paid arms", true]] as const).map(([title, paid]) => (
+            <fieldset key={title} className="rounded-xl border border-line bg-panel/70 p-3 backdrop-blur" aria-label={title}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold">{title}</span>
+                {paid && <span className="text-[11px] text-faint">{paidSel} selected · each confirms its worst case first</span>}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {ARMS.filter((a) => a.paid === paid).map((a) => {
+                  const on = arms.includes(a.id);
+                  return (
+                    <label key={a.id} className={cx("flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ring-1 ring-inset transition-colors",
+                      on ? "bg-accent/10 text-fg ring-accent/40" : "bg-panel text-muted ring-line hover:text-fg")}>
+                      <input type="checkbox" checked={on} className="accent-[rgb(var(--accent))]"
+                             onChange={(ev) => setArms((xs) => ev.target.checked ? [...xs, a.id] : xs.filter((x) => x !== a.id))} />
+                      {a.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
           ))}
-        </fieldset>
+        </div>
         {est?.paid && (
-          <p className="mt-2 text-2xs text-muted">
-            Worst case for this selection: {usd(est.usd_total)} (Claude {usd(est.usd.anthropic)}, Bitdeer {usd(est.usd.bitdeer)}),
+          <p className="mt-3 text-xs text-muted">
+            Worst case for this selection: <span className="font-semibold text-fg">{usd(est.usd_total)}</span> (Claude {usd(est.usd.anthropic)}, Bitdeer {usd(est.usd.bitdeer)}),
             {" "}{est.droid_sessions} Droid session(s). The credit guard still refuses any call above its caps.
           </p>
         )}
       </section>
-      <AICredits compact />
       {err && <ErrorNote error={err} onRetry={load} />}
       {!runs && !err && <div className="flex items-center gap-2 text-xs text-muted"><Spinner className="h-3.5 w-3.5" /> Loading…</div>}
-      {runs && !run && <Empty title="No benchmark runs yet">Press “Run SiliconBench” to execute every case. Results are stored and can be compared later.</Empty>}
+      {runs && !run && <Empty title="No benchmark runs yet" icon={<IconBars size={20} />}>Press “Run SiliconBench” to execute every case. The free arms (harness and offline rules) cost nothing; results are stored and can be compared later.</Empty>}
       {run && <BenchResult run={run} />}
+      <AICredits compact />
     </div>
+  );
+}
+
+function Ring({ value, max }: { value: number; max: number }) {
+  const pct = max > 0 ? value / max : 0;
+  const r = 20, c = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90" aria-hidden>
+      <circle cx="24" cy="24" r={r} fill="none" stroke="rgb(var(--line))" strokeWidth="5" />
+      <circle cx="24" cy="24" r={r} fill="none" stroke={pct === 1 ? "rgb(var(--ok))" : "rgb(var(--accent))"} strokeWidth="5" strokeLinecap="round"
+              strokeDasharray={`${c * pct} ${c}`} />
+    </svg>
   );
 }
 
 function BenchResult({ run }: { run: BenchRun }) {
   const res = run.result;
+  // Per-arm comparison computed from the stored per-case records.
+  const armRows = useMemo(() => {
+    if (!res) return [] as Array<{ arm: string; kind: "detect" | "repair"; ok: number; ran: number; notRun: number }>;
+    const m = new Map<string, { arm: string; kind: "detect" | "repair"; ok: number; ran: number; notRun: number }>();
+    for (const c of res.cases) {
+      for (const [arm, d] of Object.entries(c.detection)) {
+        const e = m.get(arm) ?? { arm, kind: "detect" as const, ok: 0, ran: 0, notRun: 0 };
+        if (d.status === "ran") { e.ran++; if (d.correct) e.ok++; } else e.notRun++;
+        m.set(arm, e);
+      }
+      for (const [arm, r] of Object.entries(c.repair)) {
+        const e = m.get(arm) ?? { arm, kind: "repair" as const, ok: 0, ran: 0, notRun: 0 };
+        if (r.status === "ran") { e.ran++; if (r.verdict === "verified") e.ok++; } else e.notRun++;
+        m.set(arm, e);
+      }
+    }
+    return [...m.values()];
+  }, [res]);
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Pill tone={run.status === "finished" ? "ok" : run.status === "running" ? "accent" : "bad"}>{run.status}</Pill>
         <span>started {fmtDateTime(run.created_at)}</span>
         {run.finished_at && <span>· {Math.round(run.finished_at - run.created_at)} s</span>}
-        <span>· {run.config.case_ids.length} case(s)</span>
+        <span>· {run.config.case_ids.length} case(s) · arms: {run.config.arms.join(", ")}</span>
         {run.status === "running" && <Spinner className="h-3.5 w-3.5" />}
       </div>
       {res && (
-        <Card title="Metrics (computed from stored records)">
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {Object.entries(res.metrics).map(([k, m]) => {
-              const ran = m.denominator > 0;
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Object.entries(res.metrics).map(([k, m]) => {
+            const ran = m.denominator > 0;
+            return (
+              <div key={k} className="flex items-center gap-3 rounded-xl border border-line bg-panel p-4 shadow-panel">
+                {ran ? <Ring value={m.numerator} max={m.denominator} /> : <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-line-strong text-[10px] text-faint">n/a</span>}
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-xs text-muted" title={m.label}>{m.label}</div>
+                  {ran ? (
+                    <div className={cx("text-2xl font-semibold tabular-nums", m.numerator === m.denominator ? "text-ok" : "text-fg")}>
+                      {m.numerator}<span className="text-base text-faint">/{m.denominator}</span>
+                    </div>
+                  ) : <div className="text-sm font-semibold text-orange">not run</div>}
+                  {m.not_run > 0 && <div className="text-[11px] text-faint">{m.not_run} not run</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {armRows.length > 0 && (
+        <Card title="Arm comparison" subtitle="share of cases each arm got right (detection: found the defect; repair: verifier-accepted patch)" icon={<IconBars size={15} />}>
+          <ul className="space-y-2.5">
+            {armRows.map((a) => {
+              const pct = a.ran ? (a.ok / a.ran) * 100 : 0;
               return (
-                <li key={k} className="rounded-md border border-line p-2.5">
-                  <div className="text-xs text-muted">{m.label}</div>
-                  <div className="mt-1 flex items-baseline gap-2">
-                    {ran ? (
-                      <span className={cx("text-xl font-semibold tabular-nums", m.numerator === m.denominator ? "text-ok" : "text-fg")}>
-                        {m.numerator}/{m.denominator}
-                      </span>
-                    ) : <span className="text-sm font-medium text-orange">not run</span>}
-                    {m.not_run > 0 && <span className="text-2xs text-faint">{m.not_run} not run</span>}
-                  </div>
+                <li key={a.arm} className="grid grid-cols-[minmax(9rem,14rem)_1fr_auto] items-center gap-3 text-xs">
+                  <span className="truncate font-mono text-[11.5px]" title={a.arm}>{a.arm}</span>
+                  <span className="h-2.5 overflow-hidden rounded-full bg-line/70">
+                    {a.ran > 0 && <span className={cx("block h-full rounded-full", pct === 100 ? "bg-ok" : "sbx-brand-bg")} style={{ width: `${Math.max(pct, 2)}%` }} />}
+                  </span>
+                  <span className="w-28 text-right tabular-nums text-muted">{a.ran ? `${a.ok}/${a.ran}` : <span className="text-orange">not run</span>}{a.notRun && a.ran ? <span className="text-faint"> · {a.notRun} n/r</span> : null}</span>
                 </li>
               );
             })}

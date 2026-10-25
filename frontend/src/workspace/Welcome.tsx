@@ -46,7 +46,7 @@ export function Welcome() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-2 py-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-fg">Describe a circuit. CircuitLoop engineers it.</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg">Describe a circuit. The design agent engineers it.</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
           The agent writes a hardware specification, generates Verilog, tests it in Verilator against scenarios derived
           from the spec, repairs failures, builds a bitstream with Vivado, and, after you approve, programs the Basys 3
@@ -59,7 +59,7 @@ export function Welcome() {
         <div className="grid gap-2 sm:grid-cols-2">
           {EXAMPLE_PROJECTS.map((ex) => (
             <button key={ex.title} type="button" onClick={() => fillPrompt(ex.prompt)}
-                    className="group rounded-lg border border-line bg-panel p-3.5 text-left shadow-panel transition-colors duration-150 hover:border-accent/50">
+                    className="group rounded-xl border border-line bg-panel p-3.5 text-left shadow-panel transition-colors duration-150 hover:border-accent/50">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-fg">{ex.title}</span>
                 <span className="rounded bg-raised px-1.5 py-0.5 font-mono text-2xs text-faint">{ex.tag}</span>
@@ -74,7 +74,7 @@ export function Welcome() {
 
       <section aria-label="Hardware security audit">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-faint">Or audit hardware security (SiliconBreak X)</h2>
-        <SecurityStart compact />
+        <SecurityStart />
       </section>
 
       <section aria-label="How a build works">

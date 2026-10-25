@@ -21,6 +21,7 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import { api, ApiError, errorMessage, onReachability } from "../api/client";
 import { EventStream, eventsUrl } from "../api/events";
 import type { Approval, CLEvent, Environment, HardwareStatus, RunOptions, VisionSessionState } from "../api/types";
+import { WORKSPACE_TABS } from "../lib/sections";
 import { securityApi, type SecurityAudit } from "../api/security";
 import {
   applyEvents,
@@ -41,7 +42,7 @@ import {
 } from "./reducer";
 
 const SEQ_KEY = "circuitloop:lastSeq";
-const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history", "security", "bench"];
+const TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "hardware", "vision", "history", "dashboard", "security", "bench", "fpga"];
 
 function readSeq(): number {
   try {
@@ -60,7 +61,7 @@ function writeSeq(seq: number): void {
   }
 }
 
-/** Selection <-> location hash (`#p=<id>&tab=vivado&rev=<id>&run=<id>`), so reloads keep context. */
+/** Selection <-> location hash (`#tab=vivado&p=<id>&rev=<id>&run=<id>&a=<audit>`), so reloads keep context. */
 export function selectionFromHash(hash: string): Partial<Selection> {
   const q = new URLSearchParams(hash.replace(/^#\/?/, ""));
   const tab = q.get("tab") as TabKey | null;
@@ -68,16 +69,18 @@ export function selectionFromHash(hash: string): Partial<Selection> {
     projectId: q.get("p") || null,
     revisionId: q.get("rev") || null,
     runId: q.get("run") || null,
-    tab: tab && TABS.includes(tab) ? tab : "pipeline",
+    tab: tab && TABS.includes(tab) ? tab : "dashboard",
+    auditId: q.get("a") || null,
   };
 }
 
 export function selectionToHash(sel: Selection): string {
   const q = new URLSearchParams();
   if (sel.projectId) q.set("p", sel.projectId);
-  if (sel.tab !== "pipeline") q.set("tab", sel.tab);
+  if (sel.tab !== "dashboard") q.set("tab", sel.tab);
   if (sel.revisionId) q.set("rev", sel.revisionId);
   if (sel.runId) q.set("run", sel.runId);
+  if (sel.auditId) q.set("a", sel.auditId);
   const s = q.toString();
   return s ? `#${s}` : "";
 }
@@ -354,6 +357,15 @@ export class AppStore {
     }
   }
 
+  /** Recent decided approvals too (what was last programmed onto the board, for the FPGA status). */
+  async loadAllApprovals(): Promise<void> {
+    try {
+      await this.tracked(() => api.approvals(), mergeAllApprovals);
+    } catch {
+      /* optional enrichment */
+    }
+  }
+
   async loadProject(id: string): Promise<void> {
     try {
       await this.tracked(() => api.project(id), (s, resp) => mergeProjectDetail(s, resp));
@@ -457,6 +469,11 @@ export class AppStore {
     if (tab !== this.state.selection.tab) this.select({ tab });
   }
 
+  /** Open an audit in the Security Lab (null = the overview). */
+  selectAudit(id: string | null, tab: TabKey = "security"): void {
+    this.select({ auditId: id, tab });
+  }
+
   /** History "compare": diff `target` against `base` in the Verilog tab. */
   compare(base: string, target: string): void {
     this.select({ revisionId: target, compareAgainst: base, tab: "verilog" });
@@ -474,7 +491,8 @@ export class AppStore {
       const projects = s.projects ? [r.project, ...s.projects.filter((p) => p.id !== r.project.id)] : [r.project];
       return putRunState({ ...s, projects }, r.run);
     });
-    this.select({ projectId: r.project.id, revisionId: null, runId: null, compareAgainst: null });
+    const tab = WORKSPACE_TABS.includes(this.state.selection.tab) ? this.state.selection.tab : "pipeline";
+    this.select({ projectId: r.project.id, revisionId: null, runId: null, compareAgainst: null, tab });
     await this.loadProject(r.project.id).catch(() => undefined);
   }
 
@@ -569,18 +587,14 @@ export class AppStore {
     this.putAudit(res.audit);
     await this.loadProjects();
     this.selectProject(res.project.id);
-    this.setTab("security");
+    this.selectAudit(res.audit.id);
     return res.audit;
   }
 
   /** Start an audit of a security case; selects its project and opens the Security tab. */
   async startSecurityAudit(caseId: string, opts: { investigator?: string; repair_agent?: string } = {}): Promise<SecurityAudit> {
     const res = await securityApi.startAudit({ case_id: caseId, ...opts });
-    this.putAudit(res.audit);
-    await this.loadProjects();
-    this.selectProject(res.project.id);
-    this.setTab("security");
-    return res.audit;
+    return this.openAudit(res);
   }
 }
 

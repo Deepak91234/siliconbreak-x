@@ -26,9 +26,9 @@ export function ProviderStatus({ compact = false }: { compact?: boolean }) {
   const res = useResource<SecurityHealth>("health", nonce, () => securityApi.health(nonce > 0));
   const h = res.data;
   return (
-    <section aria-label="Provider and tool status" className="rounded-lg border border-line bg-panel">
+    <section aria-label="Provider and tool status" className="rounded-xl border border-line bg-panel shadow-panel">
       <header className="flex items-center justify-between border-b border-line px-3 py-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Providers and tools</h3>
+        <h3 className="text-sm font-semibold text-fg">Providers and tools</h3>
         <Button size="sm" variant="ghost" busy={refreshing}
                 onClick={async () => { setRefreshing(true); setNonce((n) => n + 1); setTimeout(() => setRefreshing(false), 800); }}>
           Recheck

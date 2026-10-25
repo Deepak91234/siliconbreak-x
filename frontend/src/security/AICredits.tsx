@@ -67,9 +67,9 @@ export function AICredits({ compact = false }: { compact?: boolean }) {
     }
   };
   return (
-    <section aria-label="AI credits" className="rounded-lg border border-line bg-panel">
+    <section aria-label="AI credits" className="rounded-xl border border-line bg-panel shadow-panel">
       <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">AI credits</h3>
+        <h3 className="text-sm font-semibold text-fg">AI credits</h3>
         <span className="flex items-center gap-2">
           {b && <Pill tone={b.live_enabled ? "ok" : "idle"}>{b.live_enabled ? "live AI on" : "live AI off"}</Pill>}
           <Button size="sm" variant={b?.live_enabled ? "secondary" : "primary"} busy={busy} disabled={!b} onClick={toggle}>

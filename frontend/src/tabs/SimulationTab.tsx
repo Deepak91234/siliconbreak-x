@@ -229,7 +229,7 @@ export function SimulationTab({ revisionId, run }: { revisionId: string | null; 
   if (!revisionId) return <Empty title="No simulation yet">Simulation results appear once a revision has been generated and simulated.</Empty>;
 
   const stageStrip = simStages.length > 0 && (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-panel px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel shadow-panel px-3 py-2 text-xs">
       {simStages.map((s) => (
         <span key={s.key} className="flex items-center gap-1.5" title={s.summary ?? undefined}>
           <StatusIcon status={s.status} className="h-3.5 w-3.5" />

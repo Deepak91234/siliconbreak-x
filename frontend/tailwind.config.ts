@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// Colours are CSS variables (src/index.css) so the dark default and the light
+// Colours are CSS variables (src/index.css) so the light default and the dark
 // theme share every class name.
 const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
 
@@ -28,6 +28,9 @@ export default {
         idle: v("idle"),
         violet: v("violet"),
         orange: v("orange"),
+        brand: v("brand-a"),
+        brand2: v("brand-b"),
+        brand3: v("brand-c"),
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
