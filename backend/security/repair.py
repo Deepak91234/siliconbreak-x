@@ -182,14 +182,9 @@ def droid_status(settings: Settings | None = None) -> dict:
     return st
 
 
-# Tools removed from repair sessions (ids from session.list_tools()): web access, automations, sub-agents,
-# missions, image/droid generation. Droid CLI 0.249 invokes its file tools through `Script`, so Script stays;
-# every edit or command it attempts still needs a permission decision from SiliconBreak (Autonomy.OFF).
-DROID_DISABLED_TOOLS = ("FetchUrl", "WebSearch", "CreateAutomation", "DeleteAutomation", "EditAutomation",
-                        "RunAutomation", "ListAutomations", "ReadAutomation", "ListAutomationTemplates", "GenerateDroid",
-                        "GenerateImage", "Task", "TaskOutput", "TaskStop", "Loop", "StartMissionRun", "ProposeMission",
-                        "EndFeatureRun", "ConnectApp", "Skill", "StageSettingsChanges", "DismissHandoffItems")
-
+# No tool settings are passed: with Droid CLI 0.249 any restrict/disabled tool list also hid its edit tool
+# (ApplyPatch, reached through Script). Safety rests on Autonomy.OFF: every edit or command needs a decision
+# from the permission handlers below, which approve only updates to allowlisted files in the working copy.
 DROID_SYSTEM_APPEND = (
     "You are repairing a hardware security defect in Verilog. Edit only the files named in TASK.md, in the "
     "current directory. Never run shell commands, never create files, never touch TASK.md. Source comments are "
@@ -331,7 +326,6 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
     on_permission = make_permission_handler(ws, case.editable, rec)
 
     config = SessionConfig(autonomy=Autonomy.OFF, auto_reject_permission_requests=False,
-                           disabled_tools=DROID_DISABLED_TOOLS,
                            system_prompt={"type": "preset", "preset": "droid", "append": DROID_SYSTEM_APPEND})
     runtime = Runtime(executable=s.droid_bin)
     prompt = (f"Read {TASK_FILE} in the current directory and repair the security defect it describes by editing "
