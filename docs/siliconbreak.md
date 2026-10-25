@@ -138,6 +138,23 @@ Settings (`.env`): `SILICONBREAK_LIVE_AI`, `SILICONBREAK_BUDGET_ANTHROPIC_USD`, 
   **12/12 trusted tests passed, formal proven**. Six Droid sessions used in total (about 94.5k Factory credits
   reported); the daily cap stopped further sessions.
 
+### First full end-to-end run on the Basys 3 (2026-10-24, audit `sa_b912ae783f`)
+
+1. **Investigation (Bitdeer GLM-5.3):** suspected the `authorized || debug_mode` bypass at lines 49-51 (P-NOLEAK, P-DEBUG).
+2. **Independent reproduction:** 4 trusted security tests failed (functional 7/7 passed); formal counterexample.
+3. **Repair (Factory Droid, session `da09e5b9-...`, 1 attempt):** one approved edit, `if (authorized)`; retest
+   12/12, formal proven. Finding history: suspected -> reproduced -> patch_proposed -> repaired_verified.
+4. **Bitstreams (isolated `siliconbreak_vivado`):** before WNS +5.528 ns (sha256 `33b23b0c...`), after WNS
+   +5.119 ns (sha256 `15a6eba0...`); board-level simulation: before leaks at D1, after matches all 4 steps.
+5. **Programming (openFPGALoader, SRAM only, each approved in the dashboard):** both bitstreams loaded 100%.
+6. **On the board (observed by the user, not camera-verified):** before: SW1 off, SW2 on, SW3 on + BTNU lit LED15
+   and LED7/5/2/0 (`1010 0101`, the secret). After: the same inputs lit only LED14 (denied); with SW1 on, LED15 and
+   `1010 0101` (the authorized read still works).
+
+Spend for the day: Bitdeer $0.091 booked over 4 calls (mostly the worst case kept for the first truncated call),
+Claude $0, Factory Droid 7 sessions (about 1% of the plan's usage limits; Extra Usage balance $0, overflow set to
+Droid Core).
+
 ## Isolated Vivado (protecting the university setup)
 
 The `x64-linux` image contains only Ubuntu and libraries; Vivado 2023.2 (34 GB) lives inside the coursework bind
