@@ -1,109 +1,122 @@
 /**
- * FPGA Lab: everything about the physical Basys 3 in one place.
+ * FPGA Lab: one guided workflow on one Basys 3.
  *
- *   Security demo   the audit's before/after demo on the board twin (2D/3D), each
- *                   step's switches and button, LEDs from the contract, the board-
- *                   level simulation or the webcam (labelled); build, approval-gated
- *                   programming and webcam evidence per variant (HardwareDemo)
- *   Design board    the Workspace design's hardware inspector (preview, simulation
- *                   replay / virtual FPGA, live camera states, operating guide)
- *   Connection      adapters, detection, xvcd, last programming result
+ *   header       target (security demo / Workspace design), board status + Detect,
+ *                and what SiliconBreak X last wrote to the board
+ *   security demo
+ *     1 Bitstream   before / after variant: Simulate + build, approval-gated Program
+ *     2 Test        the board twin (2D/3D): each demo step sets switches and holds the
+ *                   button; LEDs from the contract, the board simulation or the webcam
+ *     3 Camera      webcam verification of the selected variant, expected vs observed
+ *     Technical details: board-level simulation table, Vivado build, hashes,
+ *                   programming log, pin mapping, connection (adapters, xvcd, raw logs)
+ *   Workspace design
+ *     the design's hardware inspector (preview, simulation replay, virtual FPGA,
+ *     live states, guide, program), its camera verification, and connection details
  *
- * The status strip shows the board connection and what CircuitLoop last wrote to
- * the board (latest executed program approval), so audit and design records
- * never contradict each other.
+ * Programming writes volatile SRAM only and always asks for approval.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { securityApi, type SecurityAudit } from "../api/security";
+import { useEffect, useMemo, useState } from "react";
+import { errorMessage } from "../api/client";
+import { securityApi, type FpgaInfo, type SecurityAudit } from "../api/security";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { IconCamera, IconChip, IconCube, IconPlug, IconShield, IconTerminal } from "../components/icons";
-import { Button, Empty, Pill, Segmented, Tabs, cx } from "../components/ui";
+import { IconCamera, IconChip, IconCube } from "../components/icons";
+import { Button, Collapsible, Empty, KV, Pill, Segmented, Select, cx } from "../components/ui";
 import { HardwareInspector } from "../hardware/HardwareInspector";
 import { fmtDateTime } from "../lib/format";
+import { isAuditProject } from "../lib/sections";
 import { hardwareState, runStatus } from "../lib/status";
+import { toast } from "../lib/toast";
 import { useResource } from "../lib/useResource";
-import { fpgaVariants, latestObservation, latestProgram, variantName } from "../security/derive";
-import { HardwareDemo } from "../security/HardwareDemo";
+import { BoardCamera, ObservationTable, VERDICT } from "../security/BoardCamera";
+import { latestObservation, latestProgram, variantName } from "../security/derive";
+import { BoardSim } from "../security/HardwareDemo";
 import { SecurityStart } from "../security/SecurityPanel";
 import { effectiveRevisionId, effectiveRunId, runForRevision } from "../store/reducer";
 import { useAppState, useStore } from "../store/store";
 import { HardwareTab } from "../tabs/HardwareTab";
+import { VisionTab } from "../tabs/vision/VisionTab";
 import { DemoBoard, LedRow, SOURCE_LABEL, howTo, stepLeds, type LedSource } from "./demo";
 
-type View = "demo" | "design" | "connection";
+type Target = "demo" | "design";
 
 export function FpgaLab() {
   const tab = useAppState((s) => s.selection.tab);
-  const [view, setView] = useState<View>(tab === "hardware" ? "connection" : "demo");
-  useEffect(() => { if (tab === "hardware") setView("connection"); }, [tab]);
+  const all = useAppState((s) => s.security);
+  const hasDemo = useMemo(() => Object.values(all).some((a) => a.case_id && a.record.case?.board), [all]);
+  const [target, setTarget] = useState<Target>(tab === "vision" ? "design" : "demo");
+  useEffect(() => { if (tab === "vision") setTarget("design"); }, [tab]);
   return (
-    <div className="space-y-4">
-      <StatusStrip />
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line">
-        <Tabs value={view} onChange={setView} options={[
-          { value: "demo", label: <span className="flex items-center gap-1.5"><IconShield size={14} />Security demo</span> },
-          { value: "design", label: <span className="flex items-center gap-1.5"><IconCube size={14} />Design board</span> },
-          { value: "connection", label: <span className="flex items-center gap-1.5"><IconPlug size={14} />Connection</span> },
-        ]} />
-        <span className="pb-2 text-[11px] text-faint">programming writes volatile SRAM only and always asks for your approval</span>
-      </div>
-      {view === "demo" && <SecurityDemo />}
-      {view === "design" && (
-        <div className="h-[calc(100vh-15rem)] min-h-[40rem] overflow-hidden rounded-xl border border-line bg-panel shadow-panel">
-          <ErrorBoundary label="Hardware inspector"><HardwareInspector /></ErrorBoundary>
-        </div>
-      )}
-      {view === "connection" && <ConnectionView />}
+    <div className="mx-auto max-w-7xl space-y-4">
+      <BoardHeader target={target} setTarget={setTarget} hasDemo={hasDemo} />
+      {target === "demo" ? <DemoWorkflow /> : <DesignWorkflow />}
     </div>
   );
 }
 
-function StatusCard({ icon, label, value, sub, tone }: { icon: ReactNode; label: string; value: ReactNode; sub?: ReactNode; tone: "ok" | "warn" | "idle" | "bad" | "info" }) {
-  return (
-    <div className="flex min-w-0 items-start gap-3 rounded-xl border border-line bg-panel p-3.5 shadow-panel">
-      <span className={cx("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset",
-        tone === "ok" ? "bg-ok/10 text-ok ring-ok/25" : tone === "warn" ? "bg-warn/10 text-warn ring-warn/25" : tone === "bad" ? "bg-bad/10 text-bad ring-bad/25"
-          : tone === "info" ? "bg-info/10 text-info ring-info/25" : "bg-raised text-faint ring-line")}>{icon}</span>
-      <div className="min-w-0">
-        <div className="text-[11px] font-medium text-faint">{label}</div>
-        <div className="truncate text-sm font-semibold text-fg">{value}</div>
-        {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function StatusStrip() {
+function BoardHeader({ target, setTarget, hasDemo }: { target: Target; setTarget: (t: Target) => void; hasDemo: boolean }) {
+  const store = useStore();
   const hw = useAppState((s) => s.hardware);
-  const env = useAppState((s) => s.environment);
   const approvals = useAppState((s) => s.approvals);
   const all = useAppState((s) => s.security);
   const hwInfo = hardwareState(hw?.state);
   const hold = latestProgram(approvals);
-  const pending = Object.values(approvals).filter((a) => a.status === "pending" && a.kind === "program_fpga").length;
+  const [detecting, setDetecting] = useState(false);
   const holdAudit = hold?.auditId ? all[hold.auditId] : undefined;
+  const details = useAppState((s) => s.details);
+  const holdDesign = hold?.revisionId ? Object.values(details).find((d) => d.revisions.some((r) => r.id === hold.revisionId)) : undefined;
+  const holdRev = holdDesign?.revisions.find((r) => r.id === hold?.revisionId);
+  const detect = async () => {
+    setDetecting(true);
+    try {
+      const h = await store.detectHardware();
+      toast(`Detect: ${h.last_detect?.message ?? hardwareState(h.state).label}`, h.last_detect?.ok ? "ok" : "info");
+    } catch (e) {
+      toast(`Detect failed: ${errorMessage(e)}`, "error");
+    } finally {
+      setDetecting(false);
+    }
+  };
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <StatusCard icon={<IconChip size={20} />} label="Basys 3" tone={hw?.state === "connected" ? "ok" : hw?.state === "no_board" ? "idle" : "warn"}
-                  value={hw ? hwInfo.label : "checking…"}
-                  sub={hw?.board?.idcode ? `idcode ${hw.board.idcode}${hw.preferred_adapter ? ` · ${hw.preferred_adapter}` : ""}` : hw?.message || "connect PROG/UART via USB"} />
-      <StatusCard icon={<IconShield size={20} />} label="On the board now (last program by SiliconBreak X)" tone={hold ? "info" : "idle"}
-                  value={hold ? (hold.auditId ? `${variantName(hold.variant ?? "?")} · ${holdAudit?.record.case?.title ?? hold.auditId}` : `design revision ${hold.revisionId ?? "?"}`) : "nothing programmed by SiliconBreak X"}
-                  sub={hold ? `${fmtDateTime(hold.at)} · sha ${hold.sha?.slice(0, 12)}… · lost on power-cycle` : "power-on design from flash"} />
-      <StatusCard icon={<IconTerminal size={20} />} label="Programmer" tone={env?.openfpgaloader.available ? "ok" : "warn"}
-                  value={env ? (env.openfpgaloader.available ? `openFPGALoader ${env.openfpgaloader.version?.match(/v?\d+(\.\d+)+/)?.[0] ?? ""}` : "openFPGALoader missing") : "checking…"}
-                  sub={env ? (env.vivado.ready ? `Vivado ${env.vivado.vivado_version ?? ""} in ${env.vivado.active_container ?? "container"}` : "Vivado container not ready") : ""} />
-      <StatusCard icon={<IconCamera size={20} />} label="Approvals" tone={pending ? "warn" : "idle"}
-                  value={pending ? `${pending} programming request${pending === 1 ? "" : "s"} waiting` : "none waiting"}
-                  sub="approve or deny in the top bar or the chat" />
-    </div>
+    <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3 shadow-panel">
+      <Segmented size="md" value={target} onChange={setTarget} options={[
+        { value: "demo", label: "Security demo", title: hasDemo ? "before/after bitstreams of an audit" : "run the debug-bypass audit first" },
+        { value: "design", label: "Workspace design", title: "the design selected in the Workspace" },
+      ]} />
+      <span className="h-6 w-px bg-line" aria-hidden />
+      <span className="flex items-center gap-2 text-xs">
+        <IconChip size={15} className="text-faint" />
+        <Pill tone={hwInfo.tone} title={hw?.message ?? ""}>{hw ? hwInfo.label : "checking…"}</Pill>
+        <Button size="sm" variant="ghost" busy={detecting} onClick={() => void detect()} title="Probe the USB-JTAG cable and read the FPGA idcode">Detect</Button>
+      </span>
+      <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted">
+        On the board: <span className="text-fg">{hold ? (hold.auditId ? `${variantName(hold.variant ?? "?")} · ${holdAudit?.record.case?.title ?? hold.auditId}` : (holdDesign && holdRev ? `${holdDesign.project.title} (r${holdRev.number})` : `Workspace design revision ${hold.revisionId ?? "?"}`)) : "nothing programmed by SiliconBreak X"}</span>
+        {hold && <> · {fmtDateTime(hold.at)} · lost on power-cycle</>}
+      </span>
+    </section>
   );
 }
 
-// ------------------------------------------------------------------ security demo
+// ------------------------------------------------------------------ security demo workflow
 
-function SecurityDemo() {
+function Step({ n, title, subtitle, children, right }: { n: number; title: string; subtitle?: string; children: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-line bg-panel shadow-panel">
+      <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
+        <span className="sbx-brand-bg flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white">{n}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {subtitle && <p className="text-[11px] text-muted">{subtitle}</p>}
+        </div>
+        {right}
+      </header>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function DemoWorkflow() {
   const store = useStore();
   const all = useAppState((s) => s.security);
   const selected = useAppState((s) => s.selection.auditId);
@@ -118,112 +131,234 @@ function SecurityDemo() {
     );
   }
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-faint">Audit</span>
-        <select value={audit.id} onChange={(e) => store.selectAudit(e.target.value, "fpga")}
-                className="h-8 rounded-lg border border-line bg-panel px-2 text-xs shadow-sm outline-none focus:border-accent">
-          {boardAudits.map((a) => <option key={a.id} value={a.id}>{a.record.case.title} · {fmtDateTime(a.created_at)} · {runStatus(a.status).label}</option>)}
-        </select>
-        <button type="button" className="text-xs text-accent hover:underline" onClick={() => store.selectAudit(audit.id)}>open in Security Lab</button>
-      </div>
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
-        <BoardTwin audit={audit} />
-        <div className="min-w-0"><HardwareDemo audit={audit} /></div>
-      </div>
-    </div>
+    <>
+      {boardAudits.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-faint">Audit</span>
+          <Select value={audit.id} onChange={(id) => store.selectAudit(id, "fpga")} className="max-w-[28rem]">
+            {boardAudits.map((a) => <option key={a.id} value={a.id}>{a.record.case.title} · {fmtDateTime(a.created_at)} · {runStatus(a.status).label}</option>)}
+          </Select>
+          <button type="button" className="text-accent hover:underline" onClick={() => store.selectAudit(audit.id)}>open in Security Lab</button>
+        </div>
+      )}
+      <DemoSteps key={audit.id} audit={audit} />
+    </>
   );
 }
 
-function BoardTwin({ audit }: { audit: SecurityAudit }) {
+function DemoSteps({ audit }: { audit: SecurityAudit }) {
+  const hw = useAppState((s) => s.hardware);
+  const openTech = useAppState((s) => s.selection.tab === "hardware");
   const version = JSON.stringify(audit.record.fpga ?? {}) + audit.record.repairs.length;
-  const info = useResource(audit.id, version, (sig) => securityApi.fpga(audit.id, sig));
-  const vs = fpgaVariants(audit);
-  const variants = info.data?.variants ?? [];
-  const steps = info.data?.demo ?? [];
+  const res = useResource<FpgaInfo>(audit.id, version, (sig) => securityApi.fpga(audit.id, sig));
+  const info = res.data;
+  const variants = info?.variants ?? [];
   const defaultVariant = [...variants].reverse().find((v) => v.kind !== "vulnerable")?.variant ?? "vulnerable";
   const [variant, setVariant] = useState<string | null>(null);
   const [source, setSource] = useState<LedSource>("simulated");
   const [view, setView] = useState<"2d" | "3d">("3d");
   const [stepId, setStepId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   const v = variant ?? defaultVariant;
-  const vState = vs[v];
+  const vState = info?.state[v];
+  const steps = info?.demo ?? [];
   const step = steps.find((s) => s.id === stepId) ?? steps[0] ?? null;
   const leds = step ? stepLeds(step, source, vState) : null;
+  const connected = hw?.state === "connected";
+  const prov = info?.provenance?.[v];
   const obs = latestObservation(vState);
+  const vInfo = variants.find((x) => x.variant === v);
+
+  const act = async (key: string, fn: () => Promise<unknown>, ok: string) => {
+    setBusy(key);
+    try {
+      await fn();
+      toast(ok, "info");
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (res.error) return <p className="text-xs text-bad">{errorMessage(res.error)}</p>;
+  if (!info) return <p className="text-xs text-muted">Loading the board demo…</p>;
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-line bg-panel shadow-panel">
-      <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10 text-accent"><IconCube size={16} /></span>
-        <h3 className="text-sm font-semibold">Basys 3 twin</h3>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {variants.length > 0 && <Segmented value={v} onChange={setVariant} options={variants.map((x) => ({ value: x.variant, label: variantName(x.variant), title: x.label }))} />}
-          <Segmented value={view} onChange={setView} options={[{ value: "2d", label: "2D" }, { value: "3d", label: "3D" }]} />
+    <div className="space-y-4">
+      <Step n={1} title="Choose and load a bitstream" subtitle="build each variant once; programming asks for your approval and writes SRAM only">
+        <div className="grid gap-3 md:grid-cols-2">
+          {variants.map((x) => {
+            const st = info.state[x.variant];
+            const b = st?.build;
+            const loaded = info.provenance?.[x.variant]?.confirmed;
+            const active = x.variant === v;
+            return (
+              <div key={x.variant} role="button" tabIndex={0} onClick={() => setVariant(x.variant)} onKeyDown={(e) => e.key === "Enter" && setVariant(x.variant)}
+                   className={cx("cursor-pointer rounded-xl border p-3 transition-colors", active ? "border-accent/60 bg-accent/5" : "border-line hover:border-line-strong")}>
+                <div className="flex items-center gap-2">
+                  <Pill tone={x.kind === "vulnerable" ? "orange" : x.kind === "reference" ? "violet" : "ok"}>
+                    {x.kind === "vulnerable" ? "before" : x.kind === "reference" ? "after (reference)" : "after (agent patch)"}
+                  </Pill>
+                  {loaded && <Pill tone="info">on the board</Pill>}
+                  {active && <span className="ml-auto text-[11px] font-medium text-accent">selected</span>}
+                </div>
+                <div className="mt-1.5 text-xs font-medium">{x.label}</div>
+                <div className="mt-0.5 text-[11px] text-muted">
+                  {b ? (b.ok ? `bitstream built · WNS ${b.timing?.wns_ns ?? "?"} ns` : `build ${b.status}: ${b.message}`) : st?.board_sim ? "simulated, not built" : "not built yet"}
+                </div>
+                <div className="mt-2.5 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="secondary" busy={busy === `b:${x.variant}`}
+                          onClick={() => act(`b:${x.variant}`, () => securityApi.fpgaBuild(audit.id, x.variant), "Build started (board simulation, then Vivado); this card updates when it finishes.")}>
+                    {b ? "Rebuild" : "Simulate + build"}
+                  </Button>
+                  <Button size="sm" variant="primary" disabled={!b?.ok || !connected} busy={busy === `p:${x.variant}`}
+                          title={!b?.ok ? "build a bitstream first" : !connected ? (hw?.state === "unknown" ? "press Detect above first" : "connect the Basys 3") : "asks for your approval before programming"}
+                          onClick={() => act(`p:${x.variant}`, () => securityApi.fpgaProgram(audit.id, x.variant), "Programming requested: approve it in Approvals (top bar).")}>
+                    Program…
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </header>
-      <div className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-faint">LEDs from</span>
-          <Segmented value={source} onChange={setSource} options={[
-            { value: "expected", label: "Contract" },
-            { value: "simulated", label: "Simulation", title: vState?.board_sim ? "board-level Verilator run of this variant" : "not simulated yet" },
-            { value: "observed", label: "Webcam", title: obs ? "latest webcam observation" : "no webcam observation for this variant" },
-          ]} />
-          <Pill tone={source === "observed" ? "ok" : source === "simulated" ? "info" : "violet"}>{SOURCE_LABEL[source]}</Pill>
-        </div>
-        <div className="rounded-xl border border-line bg-sunken/60 p-2">
-          <DemoBoard step={step} leds={leds} source={source} view={view} height="h-[24rem]" />
-        </div>
-        {!leds && step && (
-          <p className="rounded-lg border border-dashed border-line px-3 py-2 text-xs text-muted">
-            {source === "simulated" ? "This variant has not been simulated on the board top yet: press Simulate + build." : source === "observed" ? "No webcam reading of this step for this variant yet." : ""} LEDs are shown as unknown, not guessed.
-          </p>
-        )}
-        <div className="flex flex-wrap gap-1.5">
-          {steps.map((s) => (
-            <button key={s.id} type="button" onClick={() => setStepId(s.id)}
-                    className={cx("rounded-lg px-3 py-1.5 text-left ring-1 ring-inset transition-colors",
-                      step?.id === s.id ? "bg-accent/10 text-fg ring-accent/50" : "bg-panel text-muted ring-line hover:text-fg")}>
-              <span className="font-mono text-[11px] font-semibold">{s.id}</span>
-              <span className="ml-1.5 text-[11px]">{s.title}</span>
-            </button>
-          ))}
-        </div>
-        {step && (
-          <div className="rounded-xl border border-accent/30 bg-accent/[0.06] px-4 py-3">
-            <div className="text-xs font-semibold text-fg">{step.id}: {howTo(step)}</div>
-            <div className="mt-2 grid gap-2 text-[11px] sm:grid-cols-3">
-              <div><div className="text-faint">contract requires</div><LedRow hex={step.expect_leds} size="md" /><div className="mt-0.5 text-muted">{step.expect_text}</div></div>
-              <div><div className="text-faint">simulated ({variantName(v)})</div><LedRow hex={stepLeds(step, "simulated", vState)} size="md" /></div>
-              <div><div className="text-faint">webcam ({variantName(v)})</div><LedRow hex={stepLeds(step, "observed", vState)} size="md" /></div>
+      </Step>
+
+      <Step n={2} title="Test on the board" subtitle={step ? `${step.id}: ${howTo(step)}` : "no demo steps"}
+            right={<Segmented value={view} onChange={setView} options={[{ value: "2d", label: "2D" }, { value: "3d", label: "3D" }]} />}>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="rounded-xl border border-line bg-sunken/60 p-2">
+            <DemoBoard step={step} leds={leds} source={source} view={view} height="h-[24rem]" />
+          </div>
+          <div className="space-y-3">
+            <div>
+              <div className="mb-1 text-[11px] text-faint">Demo step</div>
+              <div className="space-y-1.5">
+                {steps.map((s) => (
+                  <button key={s.id} type="button" onClick={() => setStepId(s.id)}
+                          className={cx("w-full rounded-lg px-3 py-2 text-left ring-1 ring-inset transition-colors",
+                            step?.id === s.id ? "bg-accent/10 ring-accent/50" : "ring-line hover:ring-line-strong")}>
+                    <div className="text-xs font-semibold"><span className="font-mono">{s.id}</span> {s.title}</div>
+                    <div className="text-[11px] text-muted">{howTo(s)}</div>
+                  </button>
+                ))}
+              </div>
             </div>
+            <div>
+              <div className="mb-1 text-[11px] text-faint">LEDs shown on the twin</div>
+              <Segmented value={source} onChange={setSource} options={[
+                { value: "expected", label: "Contract" }, { value: "simulated", label: "Simulation" }, { value: "observed", label: "Webcam" }]} />
+              <p className="mt-1 text-[11px] text-muted">{SOURCE_LABEL[source]} · {variantName(v)}{leds ? "" : " · no data for this step (shown as unknown)"}</p>
+            </div>
+            {step && (
+              <div className="space-y-1.5 rounded-lg border border-line p-2.5 text-[11px]">
+                <div className="flex items-center justify-between gap-2"><span className="text-faint">required</span><LedRow hex={step.expect_leds} size="md" /></div>
+                <div className="flex items-center justify-between gap-2"><span className="text-faint">simulated</span><LedRow hex={stepLeds(step, "simulated", vState)} size="md" /></div>
+                <div className="flex items-center justify-between gap-2"><span className="text-faint">webcam</span><LedRow hex={stepLeds(step, "observed", vState)} size="md" /></div>
+                <p className="text-faint">{step.expect_text}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Step>
+
+      <Step n={3} title="Camera verification" subtitle={`records what the board's LEDs show at each step for ${variantName(v)}; only these recordings count as physical results`}>
+        {camera ? (
+          <BoardCamera auditId={audit.id} variant={v} label={vInfo?.label ?? v} onClose={() => { setCamera(false); res.reload(); }} />
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="primary" disabled={!prov?.confirmed} onClick={() => setCamera(true)}
+                      title={prov?.confirmed ? "record the LEDs the board shows at each demo step" : prov?.reason}>
+                <IconCamera size={15} /> Verify with webcam
+              </Button>
+              {!prov?.confirmed && <p className="min-w-0 flex-1 text-xs text-warn">Needs this bitstream on the board: {prov?.reason ?? "program it first"}.</p>}
+            </div>
+            {obs ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <Pill tone={VERDICT[obs.verdict].tone}>{VERDICT[obs.verdict].label}</Pill>
+                  <span className="text-muted">{obs.at ? fmtDateTime(obs.at) : ""} · {obs.summary}</span>
+                </div>
+                <ObservationTable obs={obs} auditId={audit.id} />
+              </div>
+            ) : <p className="text-xs text-muted">No webcam recording for {variantName(v)} yet.</p>}
           </div>
         )}
-        <p className="text-[11px] text-faint">LED15 = granted (green) · LED14 = denied (red) · LED7–LED0 = data (amber). Switch up = on; SW0 is the rightmost switch.</p>
-      </div>
-    </section>
+      </Step>
+
+      <Collapsible defaultOpen={openTech} title={<span className="text-xs">Technical details: board simulation, build, hashes, programming log, pins, connection</span>}>
+        <div className="space-y-4">
+          {vState?.board_sim ? <BoardSim steps={vState.board_sim.steps} note={vState.board_sim.note} message={vState.board_sim.message} />
+            : <p className="text-xs text-muted">{variantName(v)} has not been simulated on the board top yet.</p>}
+          {vState?.build && (
+            <KV items={[
+              ["Vivado", `${vState.build.status}${vState.build.vivado_version ? ` · ${vState.build.vivado_version}` : ""}${vState.build.duration_s ? ` · ${Math.round(vState.build.duration_s)} s` : ""}`],
+              ["Timing", vState.build.timing ? `WNS ${vState.build.timing.wns_ns ?? "?"} ns, WHS ${vState.build.timing.whs_ns ?? "?"} ns` : "–"],
+              ["Bitstream", vState.build.bitstream_bytes ? `${vState.build.bitstream_bytes} bytes` : "–"],
+              ["SHA-256", <span key="s" className="break-all font-mono">{vState.build.bitstream_sha256 ?? "–"}</span>],
+            ]} />
+          )}
+          {(vState?.programs ?? []).length > 0 && (
+            <ul className="space-y-0.5 text-[11px]">
+              {vState!.programs!.map((p, i) => (
+                <li key={i} className={p.ok ? "text-ok" : "text-bad"}>{fmtDateTime(p.at)} · {p.adapter}: {p.ok ? "programmed" : p.state} · {p.message}</li>
+              ))}
+            </ul>
+          )}
+          <div className="grid gap-x-4 gap-y-0.5 text-2xs text-muted sm:grid-cols-2">
+            {info.mapping.map((m) => <div key={m.control}><span className="font-mono text-fg">{m.control}</span> → <span className="font-mono">{m.signal}</span> · {m.text}</div>)}
+          </div>
+          <Collapsible defaultOpen={openTech} title={<span className="text-xs">Connection: adapters, USB, xvcd, last programming output</span>}><ConnectionDetails /></Collapsible>
+        </div>
+      </Collapsible>
+    </div>
   );
 }
 
-// ------------------------------------------------------------------ connection
+// ------------------------------------------------------------------ Workspace design workflow
 
-function ConnectionView() {
+function DesignWorkflow() {
+  const store = useStore();
+  const projects = useAppState((s) => s.projects);
+  const projectId = useAppState((s) => s.selection.projectId);
+  const revisionId = useAppState(effectiveRevisionId);
+  const openTech = useAppState((s) => s.selection.tab === "hardware");
+  const designs = (projects ?? []).filter((p) => !isAuditProject(p.title));
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-faint">Design</span>
+        <Select value={projectId ?? ""} onChange={(id) => store.selectProject(id || null)} className="max-w-[24rem]">
+          <option value="">— choose a Workspace design —</option>
+          {designs.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+        </Select>
+        {projectId && <button type="button" className="text-accent hover:underline" onClick={() => store.setTab("pipeline")}>open in Workspace</button>}
+      </div>
+      {!projectId ? (
+        <Empty title="No design selected" icon={<IconCube size={20} />}>Choose a design above, or build one in the Workspace AI Builder.</Empty>
+      ) : (
+        <>
+          <div className="h-[calc(100vh-14rem)] min-h-[36rem] overflow-hidden rounded-2xl border border-line bg-panel shadow-panel">
+            <ErrorBoundary label="Board"><HardwareInspector /></ErrorBoundary>
+          </div>
+          <section className="rounded-2xl border border-line bg-panel p-4 shadow-panel">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><IconCamera size={16} className="text-accent" /> Camera verification of this design</h3>
+            <ErrorBoundary label="Camera"><VisionTab revisionId={revisionId} /></ErrorBoundary>
+          </section>
+          <Collapsible defaultOpen={openTech} title={<span className="text-xs">Technical details: connection, program this revision, last programming output</span>}><ConnectionDetails /></Collapsible>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ConnectionDetails() {
   const projectId = useAppState((s) => s.selection.projectId);
   const revisionId = useAppState(effectiveRevisionId);
   const revRun = useAppState((s) => runForRevision(s, projectId, revisionId));
   const latestRunId = useAppState(effectiveRunId);
   const latestRun = useAppState((s) => (latestRunId ? s.runs[latestRunId] ?? null : null));
-  const store = useStore();
-  return (
-    <div className="space-y-3">
-      {!projectId && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-xs text-muted">
-          Design-specific programming needs a Workspace design.
-          <Button size="sm" variant="ghost" onClick={() => store.setTab("pipeline")}>Open Workspace</Button>
-        </div>
-      )}
-      <HardwareTab revisionId={revisionId} run={revRun ?? latestRun} />
-    </div>
-  );
+  return <HardwareTab revisionId={revisionId} run={revRun ?? latestRun} />;
 }

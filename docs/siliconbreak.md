@@ -33,7 +33,7 @@ contract ─ index ─ investigate ─ reproduce ─ formal ─ repair ─ retes
 | `backend/security/repair.py` | Isolated workspaces (editable RTL + `TASK.md` only), Factory Droid session with an allowlist permission handler, model-patch repair, human reference fix, scope detection and diffs |
 | `backend/security/orchestrator.py` | The audit run and the finding status ladder |
 | `backend/security/bench.py` | SiliconBench arms and metrics |
-| `frontend/src/security/`, `frontend/src/fpga/`, `frontend/src/shell/` | Dashboard, Security Lab, SiliconBench, FPGA Lab, sidebar shell |
+| `frontend/src/security/`, `frontend/src/fpga/`, `frontend/src/shell/` | Security Lab, SiliconBench, FPGA Lab, sidebar shell, Settings & usage |
 
 ## Trust boundary
 
@@ -112,7 +112,7 @@ next to the contract and the board-level simulation (`backend/security/board_vis
   running) or *inconclusive* (a step missing or unreadable).
 - **Evidence.** `fpga/<variant>/camera/<session>/observation.json`, `frames.csv` (per-frame levels of all 16 LEDs) and
   `snapshots/<step>_<n>.jpg` (a frame from inside the step window with the cells drawn green/grey for the reading). The
-  result is appended to `record.fpga.<variant>.observations` and shown under the variant in the FPGA Lab and on the Dashboard.
+  result is appended to `record.fpga.<variant>.observations` and shown in FPGA Lab step 3 and in the Security Lab verification block.
 
 Tested with the synthetic board renderer (vulnerable leak observed, patched contract met, board/simulation mismatch, missing
 step, dark scene, short capture) and through the real HTTP + WebSocket API; checked in the dashboard with a canvas standing in
@@ -272,18 +272,18 @@ GET  /api/bench/runs, /api/bench/runs/{id}
 Live progress: the existing `/ws/events` stream (`run.*`, `stage.updated`, `log`,
 `agent.message`, plus `security.updated` and `bench.updated`).
 
-## Dashboard layout
+## App layout
 
-The frontend is branded SiliconBreak X (dark theme by default, light theme on the top-bar toggle) with five sections in
-the sidebar:
+Four areas in the sidebar (dark theme by default, light on the top-bar toggle); provider settings, credits and the
+live-AI switch are in **Settings & usage**, environment and board health in one **System status** menu, approvals
+(pending and history) in the top bar. The full before/after feature map is in [ui-feature-inventory.md](ui-feature-inventory.md).
 
-| Section | What it holds |
+| Area | What it holds |
 |---|---|
-| **Dashboard** | The featured audit (the open one, else the latest verified repair): five-stage pipeline (investigate, reproduce, repair, verify, FPGA test) with durations, evidence level (suspected → reproduced → repaired → independently verified → physically observed), headline numbers, vulnerability with source, AI analysis (findings, explanation, waveform, patch), repair and verifier checklist; an FPGA rail with recorded webcam evidence, the board twin and the test guide; latest SiliconBench run, environment, recent audits |
-| **Security Lab** | Start audits (cases, public repositories, Workspace designs), all audits with their evidence level, and the full audit view with every piece of evidence (trusted tests + waveforms, formal, each repair attempt, contract, evidence record with hashes, report export) and the repair actions with credit confirmation |
-| **SiliconBench** | Free and paid arms, worst-case estimate, metric rings, per-arm comparison and per-case results |
-| **FPGA Lab** | Board connection, what was last programmed (latest executed program approval, so audit and design records never disagree), the security demo on the 2D/3D twin with LEDs from the contract, the board-level simulation or the webcam (always labelled), build / approval-gated programming / webcam evidence per variant, the Workspace design's hardware inspector, and connection details |
-| **Workspace** | The complete CircuitLoop experience: chat (project creation, follow-ups, history), Agent timeline, Code, Simulation (waveforms), Diagram, Vivado / Build, Camera, Revisions, and the hardware inspector |
+| **Security Lab** (default) | Audit target (security case, GitHub repository at a pinned commit, Workspace design) and the audit list; an audit opens as four blocks: target & AI agent, findings, autonomous repair (Factory Droid, model, reference) and independent verification (trusted tests, waveforms, formal, evidence record, hardware result), each with its evidence expandable; **Test on FPGA** |
+| **SiliconBench** | Arm configuration with worst-case cost and payment confirmation, Run benchmark, results (metrics, per-arm comparison, per-case table with case details) |
+| **FPGA Lab** | One guided workflow on one board: bitstream (before / after: Simulate + build, approval-gated Program), Test (2D/3D twin, demo steps, LEDs from contract / simulation / webcam), Camera verification; technical details collapsed. Second target: the Workspace design's board inspector and camera verification |
+| **Workspace** | AI Builder (conversation beside the run timeline), Code (sources, diffs, diagram), Simulation (waveform viewer); Build (Vivado) and History panels |
 
 Every number, status and LED pattern comes from stored records or live events; with no data the page says so.
 
@@ -291,7 +291,7 @@ Every number, status and LED pattern comes from stored records or live events; w
 
 ```bash
 ./scripts/dev.sh            # restart it if it was already running
-# open http://127.0.0.1:5173 (Dashboard; Security Lab, SiliconBench, FPGA Lab and Workspace in the sidebar)
+# open http://127.0.0.1:5173 (Security Lab; SiliconBench, FPGA Lab and Workspace in the sidebar)
 .venv/bin/python -m pytest -q tests/test_security.py
 ```
 

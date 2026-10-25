@@ -1,230 +1,209 @@
 /**
- * Workspace: the complete CircuitLoop development experience inside the
- * SiliconBreak X shell.
+ * Workspace: the CircuitLoop builder in three views plus two panels.
  *
- *   left    AI agent conversation (ChatPanel): project creation, follow-ups, history
- *   centre  Agent timeline, Code (Verilog), Simulation (waveforms), Diagram,
- *           Vivado / Build, Camera verification, Revisions
- *   right   hardware inspector: Basys 3 twin (2D/3D), modes, operating guide
+ *   header      compact project + revision selector, New design, Build, History
+ *   AI Builder  the conversation (new designs, follow-ups, history, run options,
+ *               approvals) beside the agent's run timeline
+ *   Code        Verilog files, highlighting and diffs, with a Diagram toggle
+ *   Simulation  results and the full interactive waveform viewer
+ *   Build       panel: Vivado synthesis, implementation, timing, bitstream, reports, logs
+ *   History     panel: revision changes, all projects and revisions, compare
  *
- * Panels resize (drag or ←/→ on the splitter) and collapse; below 1280 px the
- * inspector becomes a slide-over drawer and below 900 px so does the chat, so
- * code and waveform views keep their width. All content comes from the store.
+ * The board, programming and camera live in the FPGA Lab. Old tab keys still
+ * work: "diagram" opens Code on the diagram, "vivado" opens Build, "history"
+ * opens History.
  */
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ChatPanel } from "../components/ChatPanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { IconBot, IconCamera, IconChip, IconCode, IconGit, IconLayers, IconPanel, IconWave } from "../components/icons";
-import { Select, cx } from "../components/ui";
-import { HardwareInspector } from "../hardware/HardwareInspector";
-import { Splitter } from "../layout/Splitter";
+import { IconBot, IconChip, IconCode, IconGit, IconWave, IconX } from "../components/icons";
+import { Button, Segmented, Select, cx } from "../components/ui";
 import { revisionStatus } from "../lib/status";
-import { INSPECTOR_DOCK_MIN_PX, setUi, toggleInspector, useUi } from "../lib/ui";
 import { effectiveRevisionId, effectiveRunId, runForRevision, type TabKey } from "../store/reducer";
 import { useAppState, useStore } from "../store/store";
 import { HistoryTab } from "../tabs/HistoryTab";
 import { SimulationTab } from "../tabs/SimulationTab";
 import { VerilogTab } from "../tabs/VerilogTab";
 import { VivadoTab } from "../tabs/VivadoTab";
-import { VisionTab } from "../tabs/vision/VisionTab";
 import { DiagramView } from "./DiagramView";
 import { RevisionChanges } from "./RevisionChanges";
 import { CurrentAction, Timeline } from "./Timeline";
 import { Welcome } from "./Welcome";
 
-function readPref(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
+type View = "builder" | "code" | "simulation";
 
-function writePref(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* preference only */
-  }
-}
-
-function usePanelWidth(key: string, initial: number, min: number, max: number): [number, (dx: number) => void] {
-  const [w, setW] = useState(() => {
-    const v = Number(readPref(`circuitloop.w.${key}`));
-    return Number.isFinite(v) && v >= min && v <= max ? v : initial;
-  });
-  const resize = (dx: number) =>
-    setW((cur) => {
-      const next = Math.max(min, Math.min(max, cur + dx));
-      writePref(`circuitloop.w.${key}`, String(next));
-      return next;
-    });
-  return [w, resize];
-}
-
-const TABS: Array<{ key: TabKey; label: string; icon: ReactNode }> = [
-  { key: "pipeline", label: "Agent", icon: <IconBot size={15} /> },
-  { key: "verilog", label: "Code", icon: <IconCode size={15} /> },
-  { key: "simulation", label: "Simulation", icon: <IconWave size={15} /> },
-  { key: "diagram", label: "Diagram", icon: <IconLayers size={15} /> },
-  { key: "vivado", label: "Vivado / Build", icon: <IconChip size={15} /> },
-  { key: "vision", label: "Camera", icon: <IconCamera size={15} /> },
-  { key: "history", label: "Revisions", icon: <IconGit size={15} /> },
+const VIEWS: Array<{ key: View; tab: TabKey; label: string; icon: ReactNode }> = [
+  { key: "builder", tab: "pipeline", label: "AI Builder", icon: <IconBot size={15} /> },
+  { key: "code", tab: "verilog", label: "Code", icon: <IconCode size={15} /> },
+  { key: "simulation", tab: "simulation", label: "Simulation", icon: <IconWave size={15} /> },
 ];
 
-function RevisionPicker() {
-  const store = useStore();
-  const projectId = useAppState((s) => s.selection.projectId);
-  const pinned = useAppState((s) => s.selection.revisionId);
-  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
-  const effective = useAppState(effectiveRevisionId);
-  if (!detail || detail.revisions.length === 0) return null;
-  const revs = [...detail.revisions].sort((a, b) => b.number - a.number);
-  const eff = revs.find((r) => r.id === effective);
-  return (
-    <label className="flex items-center gap-1.5 text-xs text-muted">
-      <span className="hidden 2xl:inline">Revision</span>
-      <Select value={pinned ?? ""} onChange={(v) => store.selectRevision(v || null)} className="max-w-[15rem]">
-        <option value="">latest{eff && !pinned ? ` (r${eff.number})` : ""}</option>
-        {revs.map((r) => (
-          <option key={r.id} value={r.id}>r{r.number} · {r.kind} · {revisionStatus(r.status).label}</option>
-        ))}
-      </Select>
-    </label>
-  );
+function viewOf(tab: TabKey): View | null {
+  if (tab === "pipeline") return "builder";
+  if (tab === "verilog" || tab === "diagram") return "code";
+  if (tab === "simulation") return "simulation";
+  return null; // vivado / history: a panel over the last view
 }
 
-function CenterHeader({ maximized, onMaximize, chatDocked, onChat }: {
-  maximized: boolean; onMaximize: () => void; chatDocked: boolean; onChat: () => void;
-}) {
-  const store = useStore();
-  const tab = useAppState((s) => s.selection.tab);
-  const inspectorOpen = useUi((u) => (window.innerWidth >= INSPECTOR_DOCK_MIN_PX ? u.inspectorOpen : u.inspectorDrawer));
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 border-b border-line bg-panel/60 px-3">
-      {!chatDocked && (
-        <button type="button" onClick={onChat} className="order-2 rounded-lg px-2 py-1 text-xs font-medium text-muted hover:bg-raised hover:text-fg sm:order-none">Chat</button>
-      )}
-      <nav className="-mb-px flex min-w-0 basis-full gap-0.5 overflow-x-auto sm:min-w-[29rem] sm:basis-0 sm:flex-1" role="tablist" aria-label="Workspace views">
-        {TABS.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => store.setTab(t.key)}
-                  className={cx("flex items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-3 text-[13px] font-medium transition-colors duration-150",
-                    tab === t.key ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg")}>
-            <span className={cx("hidden 2xl:inline", tab === t.key ? "text-accent" : "text-faint")}>{t.icon}</span>
-            {t.label}
-          </button>
-        ))}
-      </nav>
-      <div className="order-3 py-1 sm:order-none sm:py-0"><RevisionPicker /></div>
-      <button type="button" onClick={toggleInspector} aria-pressed={inspectorOpen} title="Show or hide the hardware inspector"
-              className={cx("order-4 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium sm:order-none",
-                inspectorOpen ? "bg-accent/10 text-accent" : "text-muted hover:bg-raised hover:text-fg")}>
-        <IconPanel size={15} /> <span className="hidden 2xl:inline">Hardware</span>
-      </button>
-      <button type="button" onClick={onMaximize} className="order-4 ml-auto rounded-lg p-1.5 text-muted hover:bg-raised hover:text-fg sm:order-none sm:ml-0"
-              title={maximized ? "Restore panels" : "Maximize the workspace"} aria-pressed={maximized}>
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-          {maximized ? <path d="M8 3v5H3M12 17v-5h5M17 8h-5V3M3 12h5v5" strokeLinecap="round" strokeLinejoin="round" />
-            : <path d="M3 8V3h5M17 12v5h-5M12 3h5v5M8 17H3v-5" strokeLinecap="round" strokeLinejoin="round" />}
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-function CenterContent() {
-  const tab = useAppState((s) => s.selection.tab);
+function useRun() {
   const projectId = useAppState((s) => s.selection.projectId);
-  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
   const revisionId = useAppState(effectiveRevisionId);
   const revRun = useAppState((s) => runForRevision(s, projectId, revisionId));
   const latestRunId = useAppState(effectiveRunId);
   const latestRun = useAppState((s) => (latestRunId ? s.runs[latestRunId] ?? null : null));
-  const run = revRun ?? latestRun;
-
-  if (!projectId && tab !== "history") return <Welcome />;
-  let body: ReactNode = null;
-  switch (tab) {
-    case "pipeline":
-      body = run ? (
-        <div className="mx-auto max-w-4xl space-y-4">
-          <CurrentAction run={run} />
-          <Timeline run={run} />
-        </div>
-      ) : <Welcome />;
-      break;
-    case "verilog": body = <VerilogTab revisionId={revisionId} detail={detail} />; break;
-    case "simulation": body = <SimulationTab revisionId={revisionId} run={run} />; break;
-    case "diagram": body = <DiagramView revisionId={revisionId} />; break;
-    case "vivado": body = <VivadoTab revisionId={revisionId} run={run} />; break;
-    case "vision": body = <VisionTab revisionId={revisionId} />; break;
-    case "history": body = <div className="space-y-4"><RevisionChanges revisionId={revisionId} /><HistoryTab /></div>; break;
-  }
-  return <div className="min-w-0">{body}</div>;
+  return { projectId, revisionId, run: revRun ?? latestRun };
 }
 
-function Drawer({ side, onClose, children, label }: { side: "left" | "right"; onClose: () => void; children: ReactNode; label: string }) {
+function Selectors() {
+  const store = useStore();
+  const projects = useAppState((s) => s.projects);
+  const projectsError = useAppState((s) => s.projectsError);
+  const projectId = useAppState((s) => s.selection.projectId);
+  const pinned = useAppState((s) => s.selection.revisionId);
+  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
+  const effective = useAppState(effectiveRevisionId);
+  const revs = detail ? [...detail.revisions].sort((a, b) => b.number - a.number) : [];
+  const eff = revs.find((r) => r.id === effective);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={projectId ?? ""} onChange={(v) => store.selectProject(v || null)} className="max-w-[18rem]" title={projectsError ?? "Project"}>
+        <option value="">{projects === null ? (projectsError ? "Projects unavailable" : "Loading projects…") : "— New design —"}</option>
+        {projects?.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+      </Select>
+      {revs.length > 0 && (
+        <Select value={pinned ?? ""} onChange={(v) => store.selectRevision(v || null)} className="max-w-[13rem]" title="Revision">
+          <option value="">latest{eff && !pinned ? ` (r${eff.number})` : ""}</option>
+          {revs.map((r) => <option key={r.id} value={r.id}>r{r.number} · {r.kind} · {revisionStatus(r.status).label}</option>)}
+        </Select>
+      )}
+      <Button size="sm" variant={projectId ? "ghost" : "secondary"} onClick={() => { store.selectProject(null); store.setTab("pipeline"); }} title="Start a new design">
+        + New design
+      </Button>
+    </div>
+  );
+}
+
+function Panel({ title, icon, onClose, children }: { title: string; icon: ReactNode; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-30 flex bg-black/40" onClick={onClose} role="presentation">
-      <aside role="dialog" aria-label={label} onClick={(e) => e.stopPropagation()}
-             className={cx("h-full w-[min(26rem,92vw)] bg-panel shadow-pop", side === "right" ? "ml-auto border-l border-line" : "border-r border-line")}>
-        {children}
+    <div className="fixed inset-0 z-30 flex bg-black/45" onClick={onClose} role="presentation">
+      <aside role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}
+             className="sbx-enter ml-auto flex h-full w-[min(68rem,96vw)] flex-col border-l border-line bg-bg shadow-pop">
+        <header className="flex items-center gap-2 border-b border-line px-4 py-3">
+          <span className="text-accent">{icon}</span>
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} className="ml-auto rounded-lg p-1.5 text-muted hover:bg-raised hover:text-fg" aria-label={`Close ${title}`}><IconX size={16} /></button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4"><ErrorBoundary label={title}>{children}</ErrorBoundary></div>
       </aside>
     </div>
   );
 }
 
-export function WorkspaceView({ width }: { width: number }) {
-  const inspectorOpen = useUi((s) => s.inspectorOpen);
-  const [leftW, resizeLeft] = usePanelWidth("chat", 360, 300, 560);
-  const [rightW, resizeRight] = usePanelWidth("hardware", 420, 340, 720);
-  const [maximized, setMaximized] = useState(false);
-  const [chatDrawer, setChatDrawer] = useState(false);
-  const chatDocked = width >= 900;
-  const inspectorDocked = width >= INSPECTOR_DOCK_MIN_PX;
-  const inspectorDrawer = useUi((s) => s.inspectorDrawer);
+export function WorkspaceView() {
+  const store = useStore();
+  const tab = useAppState((s) => s.selection.tab);
+  const { projectId, revisionId, run } = useRun();
+  const detail = useAppState((s) => (projectId ? s.details[projectId] : undefined));
+  const [lastView, setLastView] = useState<View>(viewOf(tab) ?? "builder");
+  const [codeMode, setCodeMode] = useState<"source" | "diagram">(tab === "diagram" ? "diagram" : "source");
+  const current = viewOf(tab);
+  useEffect(() => {
+    if (current) setLastView(current);
+    if (tab === "diagram") setCodeMode("diagram");
+    if (tab === "verilog") setCodeMode((m) => (m === "diagram" ? m : "source"));
+  }, [tab, current]);
+  const view = current ?? lastView;
+  const panel = tab === "vivado" ? "build" : tab === "history" ? "history" : null;
+  const closePanel = () => store.setTab(VIEWS.find((v) => v.key === view)!.tab);
 
   return (
-    <div className="flex h-full min-h-0">
-      {chatDocked && !maximized && (
-        <>
-          <aside className="min-h-0 flex-none bg-panel" style={{ width: leftW }} aria-label="AI agent conversation">
-            <ErrorBoundary label="Chat"><ChatPanel /></ErrorBoundary>
-          </aside>
-          <Splitter label="Resize chat panel" onResize={resizeLeft} />
-        </>
-      )}
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Engineering workspace">
-        <CenterHeader maximized={maximized} onMaximize={() => setMaximized((m) => !m)} chatDocked={chatDocked && !maximized}
-                      onChat={() => (chatDocked ? setMaximized(false) : setChatDrawer(true))} />
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <ErrorBoundary label="Workspace"><CenterContent /></ErrorBoundary>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-panel/60 px-4 py-2">
+        <Selectors />
+        <nav className="flex gap-1 rounded-xl bg-sunken p-1 ring-1 ring-line" role="tablist" aria-label="Workspace views">
+          {VIEWS.map((v) => (
+            <button key={v.key} type="button" role="tab" aria-selected={view === v.key} onClick={() => store.setTab(v.tab)}
+                    className={cx("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
+                      view === v.key ? "bg-panel text-fg shadow-sm ring-1 ring-line" : "text-muted hover:text-fg")}>
+              <span className={view === v.key ? "text-accent" : "text-faint"}>{v.icon}</span>{v.label}
+            </button>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button size="sm" variant="secondary" disabled={!revisionId} onClick={() => store.setTab("vivado")}
+                  title="Vivado synthesis, implementation, timing, bitstream and reports">
+            <IconChip size={14} /> Build
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => store.setTab("history")} title="Revision history and comparisons">
+            <IconGit size={14} /> History
+          </Button>
         </div>
-      </section>
-      {inspectorDocked && inspectorOpen && !maximized && (
-        <>
-          <Splitter label="Resize hardware panel" onResize={resizeRight} invert />
-          <aside className="min-h-0 flex-none border-l border-line bg-panel" style={{ width: rightW }} aria-label="Hardware inspector">
-            <ErrorBoundary label="Hardware inspector"><HardwareInspector onClose={() => setUi({ inspectorOpen: false })} /></ErrorBoundary>
-          </aside>
-        </>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        {view === "builder" && (
+          <div className="grid h-full min-h-0 lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)]">
+            <aside className="min-h-0 border-r border-line bg-panel" aria-label="AI builder conversation">
+              <ErrorBoundary label="Chat"><ChatPanel hidePicker /></ErrorBoundary>
+            </aside>
+            <div className="min-h-0 overflow-y-auto p-4">
+              <ErrorBoundary label="Agent timeline">
+                {!projectId || !run ? <Welcome /> : (
+                  <div className="mx-auto max-w-4xl space-y-4">
+                    <CurrentAction run={run} />
+                    <Timeline run={run} />
+                  </div>
+                )}
+              </ErrorBoundary>
+            </div>
+          </div>
+        )}
+        {view === "code" && (
+          <div className="h-full overflow-y-auto p-4">
+            {!projectId ? <NoProject /> : (
+              <div className="space-y-3">
+                <Segmented value={codeMode} onChange={(m) => { setCodeMode(m); store.setTab(m === "diagram" ? "diagram" : "verilog"); }}
+                           options={[{ value: "source", label: "Source & diffs" }, { value: "diagram", label: "Diagram" }]} />
+                <ErrorBoundary label="Code">
+                  {codeMode === "diagram" ? <DiagramView revisionId={revisionId} /> : <VerilogTab revisionId={revisionId} detail={detail} />}
+                </ErrorBoundary>
+              </div>
+            )}
+          </div>
+        )}
+        {view === "simulation" && (
+          <div className="h-full overflow-y-auto p-4">
+            {!projectId ? <NoProject /> : <ErrorBoundary label="Simulation"><SimulationTab revisionId={revisionId} run={run} /></ErrorBoundary>}
+          </div>
+        )}
+      </div>
+
+      {panel === "build" && (
+        <Panel title="Build (Vivado)" icon={<IconChip size={16} />} onClose={closePanel}>
+          <VivadoTab revisionId={revisionId} run={run} />
+        </Panel>
       )}
-      {!inspectorDocked && inspectorDrawer && (
-        <Drawer side="right" label="Hardware inspector" onClose={() => setUi({ inspectorDrawer: false })}>
-          <ErrorBoundary label="Hardware inspector"><HardwareInspector onClose={() => setUi({ inspectorDrawer: false })} /></ErrorBoundary>
-        </Drawer>
+      {panel === "history" && (
+        <Panel title="History" icon={<IconGit size={16} />} onClose={closePanel}>
+          <div className="space-y-4"><RevisionChanges revisionId={revisionId} /><HistoryTab /></div>
+        </Panel>
       )}
-      {!chatDocked && chatDrawer && (
-        <Drawer side="left" label="AI agent conversation" onClose={() => setChatDrawer(false)}>
-          <ChatPanel />
-        </Drawer>
-      )}
+    </div>
+  );
+}
+
+function NoProject() {
+  const store = useStore();
+  return (
+    <div className="mx-auto max-w-lg py-16 text-center text-sm text-muted">
+      Choose a project above, or describe a new design in the{" "}
+      <button type="button" className="text-accent hover:underline" onClick={() => store.setTab("pipeline")}>AI Builder</button>.
     </div>
   );
 }

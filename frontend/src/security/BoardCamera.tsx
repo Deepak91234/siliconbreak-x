@@ -114,7 +114,7 @@ export function BoardCamera({ auditId, variant, label, onClose }: { auditId: str
   const rootRef = useRef<HTMLDivElement>(null);
   const timers = useRef<number[]>([]);
   // The panel opens inside a long page: bring it into view so the click visibly does something.
-  useEffect(() => { rootRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); }, []);
+  useEffect(() => { rootRef.current?.scrollIntoView({ block: "start" }); }, []);
 
   const put = useCallback((s: CameraSession) => setSess((cur) => (cur && s.id !== cur.id ? cur : s)), []);
   const stream = useFrameStreamer<CameraSession>(sess?.id ?? null, camera.videoRef, put);

@@ -313,7 +313,8 @@ function ProjectPicker({ projectId }: { projectId: string | null }) {
   );
 }
 
-export function ChatPanel() {
+/** `hidePicker`: the Workspace header already has the project selector. */
+export function ChatPanel({ hidePicker = false }: { hidePicker?: boolean } = {}) {
   const store = useStore();
   const selection = useAppState((s) => s.selection);
   const projectId = selection.projectId;
@@ -357,7 +358,7 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ProjectPicker projectId={projectId} />
+      {!hidePicker && <ProjectPicker projectId={projectId} />}
       {detail && (
         <div className="flex items-center gap-2 border-b border-line px-3 py-1.5 text-[11px] text-muted">
           <span className="min-w-0 flex-1 truncate font-medium text-fg">{detail.project.title}</span>

@@ -110,7 +110,7 @@ export function initialState(): AppState {
     revisionVersions: {},
     vision: {},
     security: {},
-    selection: { projectId: null, revisionId: null, runId: null, tab: "dashboard", compareAgainst: null, auditId: null },
+    selection: { projectId: null, revisionId: null, runId: null, tab: "security", compareAgainst: null, auditId: null },
     lastEventAt: null,
     faults: null,
     faultsError: null,

@@ -69,7 +69,7 @@ export function selectionFromHash(hash: string): Partial<Selection> {
     projectId: q.get("p") || null,
     revisionId: q.get("rev") || null,
     runId: q.get("run") || null,
-    tab: tab && TABS.includes(tab) ? tab : "dashboard",
+    tab: tab && TABS.includes(tab) ? (tab === "dashboard" ? "security" : tab) : "security",
     auditId: q.get("a") || null,
   };
 }
@@ -77,7 +77,7 @@ export function selectionFromHash(hash: string): Partial<Selection> {
 export function selectionToHash(sel: Selection): string {
   const q = new URLSearchParams();
   if (sel.projectId) q.set("p", sel.projectId);
-  if (sel.tab !== "dashboard") q.set("tab", sel.tab);
+  if (sel.tab !== "security") q.set("tab", sel.tab);
   if (sel.revisionId) q.set("rev", sel.revisionId);
   if (sel.runId) q.set("run", sel.runId);
   if (sel.auditId) q.set("a", sel.auditId);

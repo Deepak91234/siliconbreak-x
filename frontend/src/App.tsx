@@ -1,14 +1,14 @@
 /**
  * SiliconBreak X shell.
  *
- *   sidebar   brand, the five sections, recent audits / designs, AI credit meters
- *   top bar   page title, live environment chips, approvals, presentation, theme
- *   main      Dashboard · Security Lab · SiliconBench · FPGA Lab · Workspace
+ *   sidebar   brand, the four areas, Settings & usage
+ *   top bar   page title, System status, approvals, presentation, theme
+ *   main      Security Lab (default) · SiliconBench · FPGA Lab · Workspace
  *
- * Workspace is the complete original CircuitLoop experience (chat, code,
- * simulation, diagram, Vivado, camera, revisions, hardware inspector). All
- * content comes from the store (backend REST + /ws/events); the shell only
- * arranges it.
+ * Workspace holds the CircuitLoop builder (AI Builder, Code with diagram,
+ * Simulation, Build and History panels); hardware and camera live in the FPGA
+ * Lab. All content comes from the store (backend REST + /ws/events); the shell
+ * only arranges it.
  */
 
 import { useEffect, useState } from "react";
@@ -21,9 +21,9 @@ import { FpgaLab } from "./fpga/FpgaLab";
 import { SECTION_INFO, sectionOf, type Section } from "./lib/sections";
 import { setUi, useUi } from "./lib/ui";
 import { PresentationView } from "./presentation/PresentationView";
-import { Dashboard } from "./security/Dashboard";
 import { SecurityLab } from "./security/SecurityLab";
 import { SiliconBench } from "./security/SiliconBench";
+import { SettingsDrawer } from "./shell/SettingsDrawer";
 import { Sidebar } from "./shell/Sidebar";
 import { useAppState, useStore } from "./store/store";
 import { WorkspaceView } from "./workspace/WorkspaceView";
@@ -32,7 +32,7 @@ type Theme = "dark" | "light";
 const THEME_KEY = "siliconbreak.theme";
 const SIDEBAR_KEY = "siliconbreak.sidebar";
 const AUTO_COLLAPSE_PX = 1180;
-const WORKSPACE_COLLAPSE_PX = 1720;
+const WORKSPACE_COLLAPSE_PX = 1360;
 
 function readPref(key: string): string | null {
   try {
@@ -72,7 +72,6 @@ function PageTitle({ section }: { section: Section }) {
 
 function SectionBody({ section }: { section: Exclude<Section, "workspace"> }) {
   switch (section) {
-    case "dashboard": return <Dashboard />;
     case "security": return <SecurityLab />;
     case "bench": return <SiliconBench />;
     case "fpga": return <FpgaLab />;
@@ -87,10 +86,11 @@ export function App() {
   const [narrowOpen, setNarrowOpen] = useState(false);
   const presentation = useUi((s) => s.presentation);
   const aiDialog = useUi((s) => s.aiDialog);
+  const settings = useUi((s) => s.settings);
   const tab = useAppState((s) => s.selection.tab);
   const section = sectionOf(tab);
   useEffect(() => setNarrowOpen(false), [section]);
-  // The Workspace needs its width for chat + code/waveforms + the hardware inspector.
+  // The Workspace needs its width for the chat beside the timeline, code and waveforms.
   const auto = width < AUTO_COLLAPSE_PX || (section === "workspace" && width < WORKSPACE_COLLAPSE_PX);
   const collapsed = auto ? !narrowOpen : collapsedPref;
 
@@ -117,7 +117,7 @@ export function App() {
         <ConnectionBanner />
         <main className="min-h-0 flex-1">
           {section === "workspace" ? (
-            <WorkspaceView width={width} />
+            <WorkspaceView />
           ) : (
             <div key={section} className="h-full overflow-y-auto">
               <div className="sbx-enter mx-auto w-full max-w-[1560px] p-4 lg:p-5">
@@ -128,6 +128,7 @@ export function App() {
         </main>
       </div>
       {presentation && <ErrorBoundary label="Presentation mode"><PresentationView /></ErrorBoundary>}
+      {settings && <ErrorBoundary label="Settings"><SettingsDrawer onClose={() => setUi({ settings: false })} /></ErrorBoundary>}
       <AIProviderDialog open={aiDialog} onClose={() => setUi({ aiDialog: false })} />
       <Toasts />
     </div>

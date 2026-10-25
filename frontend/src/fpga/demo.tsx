@@ -11,7 +11,7 @@
 
 import { Suspense, lazy, useMemo } from "react";
 import { api } from "../api/client";
-import type { BoardObservation, DemoStep, FpgaInfo, FpgaVariantState, ObservedStep } from "../api/security";
+import type { BoardObservation, DemoStep, FpgaVariantState, ObservedStep } from "../api/security";
 import { Board2D } from "../board/Board2D";
 import { buildBoardModel, emptyVisual, type BoardVisualState, type Provenance } from "../board/model";
 import { Spinner, cx } from "../components/ui";
@@ -124,7 +124,3 @@ export const SOURCE_LABEL: Record<LedSource, string> = {
   observed: "Observed (webcam)",
 };
 
-/** Demo steps of the case: from the FPGA info endpoint (case manifest). */
-export function demoSteps(info: FpgaInfo | null): DemoStep[] {
-  return info?.demo ?? [];
-}

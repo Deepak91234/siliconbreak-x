@@ -132,7 +132,7 @@ function TimelineRow({ stage, index, last, runId, open, onToggle, now }: {
           <StageLogs runId={runId} stage={stage.key} />
           {copy.tab && (
             <button type="button" onClick={() => store.setTab(copy.tab as TabKey)} className="text-accent hover:underline">
-              Open {copy.tab} view →
+              Open {({ verilog: "Code", simulation: "Simulation", vivado: "Build", hardware: "FPGA Lab", vision: "FPGA Lab camera", diagram: "Diagram" } as Record<string, string>)[copy.tab] ?? copy.tab} →
             </button>
           )}
         </div>

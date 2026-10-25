@@ -1,29 +1,28 @@
 /**
- * The five primary sections of the SiliconBreak X shell and how the existing
- * tab keys map onto them. Workspace keeps every original CircuitLoop view; the
- * old "hardware" (Connection) tab now opens inside the FPGA Lab.
+ * The four primary areas of the SiliconBreak X shell and how the existing tab
+ * keys map onto them. Old links keep working: "dashboard" opens the Security
+ * Lab; "vision" (design camera) and "hardware" (connection) open the FPGA Lab;
+ * "diagram", "vivado" and "history" open inside the Workspace.
  */
 
 import type { TabKey } from "../store/reducer";
 
-export type Section = "dashboard" | "security" | "bench" | "fpga" | "workspace";
+export type Section = "security" | "bench" | "fpga" | "workspace";
 
-export const WORKSPACE_TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "vision", "history"];
+export const WORKSPACE_TABS: TabKey[] = ["pipeline", "verilog", "simulation", "diagram", "vivado", "history"];
 
 export function sectionOf(tab: TabKey): Section {
-  if (tab === "dashboard") return "dashboard";
-  if (tab === "security") return "security";
+  if (tab === "security" || tab === "dashboard") return "security";
   if (tab === "bench") return "bench";
-  if (tab === "fpga" || tab === "hardware") return "fpga";
+  if (tab === "fpga" || tab === "hardware" || tab === "vision") return "fpga";
   return "workspace";
 }
 
 export const SECTION_INFO: Record<Section, { label: string; blurb: string; tab: TabKey }> = {
-  dashboard: { label: "Dashboard", blurb: "Overview of the latest results", tab: "dashboard" },
-  security: { label: "Security Lab", blurb: "AI investigation & repair", tab: "security" },
-  bench: { label: "SiliconBench", blurb: "Benchmark & compare", tab: "bench" },
-  fpga: { label: "FPGA Lab", blurb: "Board, camera & programming", tab: "fpga" },
-  workspace: { label: "Workspace", blurb: "Design, code & build", tab: "pipeline" },
+  security: { label: "Security Lab", blurb: "Audit, repair and verify RTL", tab: "security" },
+  bench: { label: "SiliconBench", blurb: "Benchmark security agents", tab: "bench" },
+  fpga: { label: "FPGA Lab", blurb: "Program and test the Basys 3", tab: "fpga" },
+  workspace: { label: "Workspace", blurb: "Build designs with the AI builder", tab: "pipeline" },
 };
 
 /** Projects the security orchestrator creates for audits (not hand-made designs). */

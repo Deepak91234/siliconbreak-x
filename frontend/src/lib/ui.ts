@@ -20,6 +20,7 @@ export interface UiState {
   inspectorOpen: boolean;
   presentation: boolean;
   aiDialog: boolean;
+  settings: boolean; // Settings & usage drawer (AI providers, credits, live AI)
   inspectorDrawer: boolean; // narrow screens: inspector as a slide-over (not persisted)
 }
 
@@ -45,6 +46,7 @@ let state: UiState = {
   inspectorOpen: saved.inspectorOpen !== false,
   presentation: false,
   aiDialog: false,
+  settings: false,
   inspectorDrawer: false,
 };
 const listeners = new Set<() => void>();
