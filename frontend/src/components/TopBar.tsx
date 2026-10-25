@@ -313,12 +313,15 @@ export function TopBar({ theme, onToggleTheme }: { theme: "dark" | "light"; onTo
                 Open Hardware tab
               </button>
             </Popover>
-            <Popover tone={env.llm.configured ? "ok" : "warn"} label={env.llm.configured ? `Model agent · ${env.llm.model}` : "Offline rules mode"}>
+            <Popover tone={env.llm.configured ? "ok" : "warn"}
+                     label={env.llm.configured ? `Model agent · ${env.llm.model}` : env.llm.key_present ? "Live AI off" : "Offline rules mode"}>
               <KV items={[
                 ["Mode", env.llm.configured ? "model-powered agent" : "rules-based offline fallback"],
                 ["Provider", env.llm.provider],
                 ["Model", env.llm.model],
-                ["Configured", env.llm.configured ? "yes" : "no (requests use the offline rule interpreter and preverified templates; automatic repair is unavailable)"],
+                ["Configured", env.llm.configured ? "yes" : env.llm.key_present
+                  ? "key present, live AI calls off (credit protection: turn them on in the Security tab's AI credits panel)"
+                  : "no (requests use the offline rule interpreter and preverified templates; automatic repair is unavailable)"],
               ]} />
               <button type="button" className="mt-2 text-[11px] text-accent hover:underline" onClick={() => setUi({ aiDialog: true })}>
                 {env.llm.configured ? "AI provider settings" : "Set up the AI model"}

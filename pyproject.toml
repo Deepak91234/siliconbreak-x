@@ -10,6 +10,7 @@ asyncio_mode = "auto"
 markers = [
     "verilator: needs the verilator binary",
     "network: fetches from github.com (opt-in with --run-network)",
+    "live_ai: makes billed AI calls (opt-in with --run-live-ai)",
     "vivado: runs a real Vivado build in the Docker container (slow, opt-in with --run-vivado)",
     "hardware: needs a connected Basys 3 (opt-in with --run-hardware)",
 ]

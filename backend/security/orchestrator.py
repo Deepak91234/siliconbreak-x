@@ -98,7 +98,7 @@ class SecurityOrchestrator:
         self.locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------ entrypoints
-    async def start_case_audit(self, case_id: str, *, investigator: str | None = None, repair_agent: str = "auto",
+    async def start_case_audit(self, case_id: str, *, investigator: str | None = None, repair_agent: str = "none",
                                max_attempts: int | None = None) -> dict:
         case = get_case(case_id)
         if case is None:
@@ -789,6 +789,13 @@ class SecurityOrchestrator:
         max_attempts = int(audit["options"].get("max_attempts", s.max_repair_attempts))
 
         chosen, model_provider, why = self._choose_agent(agent)
+        if chosen is None and agent == "none":
+            await ctx.stage("repair", "skipped", "not requested: use the Repair buttons in the Security tab (each repair "
+                                                 "is an explicit, credit-guarded action)")
+            await ctx.stage("retest", "skipped", "no repair attempt was made")
+            await self._evidence(ctx, audit_id, case)
+            await self._finish_audit(ctx, audit_id, "reproduced", "Vulnerability reproduced; no repair requested yet.")
+            return
         if chosen is None:
             await ctx.stage("repair", "unavailable", why)
             await ctx.stage("retest", "skipped", "no repair attempt was made")
@@ -802,7 +809,8 @@ class SecurityOrchestrator:
         formal_orig = record.get("formal_original")
         finding = next((f for f in record["findings"] if f["status"] in ("reproduced", "repair_failed")), None)
         sources = {rel: case.path(rel) for rel in case.editable}
-        attempts = 1 if chosen == "reference" else max_attempts
+        attempts = 1 if chosen == "reference" else (min(max_attempts, s.droid_max_attempts) if chosen == "factory"
+                                                    else max_attempts)
         evidence = rep.failing_evidence_text(case, report, formal_orig)
         verdict = None
         for n in range(1, attempts + 1):
@@ -933,6 +941,10 @@ class SecurityOrchestrator:
             return None, None, "automatic repair was not requested"
         if agent == "reference":
             return "reference", None, ""
+        from backend.core import budget
+
+        if not budget.live_enabled():
+            return None, None, "live AI calls are off (credit protection); turn them on in the AI credits panel"
         droid = rep.droid_status()
         # automatic repairs use Droid only when it is explicitly configured (FACTORY_API_KEY); a CLI that
         # may merely be logged in runs only when the user asks for it by name

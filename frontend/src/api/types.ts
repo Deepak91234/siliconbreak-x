@@ -506,7 +506,8 @@ export interface Environment {
   vivado: VivadoEnvironment;
   verilator: ToolInfo;
   openfpgaloader: ToolInfo;
-  llm: { provider: string; model: string; configured: boolean };
+  /** configured = a key is present AND live AI calls are on (credit protection); key_present alone does not spend. */
+  llm: { provider: string; model: string; configured: boolean; key_present?: boolean; live_ai?: boolean };
   hardware: HardwareStatus;
   config: { runs_dir?: string; sim_clk_hz?: number; max_repair_attempts?: number; [k: string]: unknown };
 }

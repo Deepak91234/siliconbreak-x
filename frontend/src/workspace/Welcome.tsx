@@ -118,7 +118,7 @@ function Readiness() {
     },
     {
       ok: env.llm.configured, label: "AI model",
-      detail: env.llm.configured ? `${env.llm.model}` : (
+      detail: env.llm.configured ? `${env.llm.model}` : env.llm.key_present ? "Key present; live AI calls are off (Security tab → AI credits)" : (
         <span>Offline rules mode (no API key).{" "}
           <button type="button" className="text-accent hover:underline" onClick={() => setUi({ aiDialog: true })}>Set up the model</button></span>
       ),

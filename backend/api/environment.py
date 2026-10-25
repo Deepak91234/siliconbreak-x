@@ -41,12 +41,16 @@ async def collect(force: bool = False) -> dict:
         )
         vd = viv.as_dict()
         vd["build_running"] = vb.is_busy()
+        from backend.core import budget
+
+        live = budget.live_enabled()
         env = {
             "checked_at": time.time(),
             "vivado": vd,
             "verilator": verilator,
             "openfpgaloader": ofl,
-            "llm": {"provider": s.llm_provider, "model": s.llm_model, "configured": s.llm_configured},
+            "llm": {"provider": s.llm_provider, "model": s.llm_model, "configured": s.llm_configured and live,
+                    "key_present": s.llm_configured, "live_ai": live},
             "hardware": hw.model_dump() if hasattr(hw, "model_dump") else hw,
             "config": s.public_dict(),
         }

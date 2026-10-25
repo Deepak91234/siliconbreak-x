@@ -278,7 +278,9 @@ function Welcome() {
       </p>
       {llm && (
         <p className="text-[11px] text-faint">
-          {llm.configured ? `Agent: ${llm.provider} ${llm.model}.` : "Agent: offline rules mode (no API key). Supported phrasings and preverified templates only."}
+          {llm.configured ? `Agent: ${llm.provider} ${llm.model}.` : llm.key_present
+            ? "Agent: offline rules mode (live AI calls are off; turn them on in the Security tab's AI credits panel)."
+            : "Agent: offline rules mode (no API key). Supported phrasings and preverified templates only."}
         </p>
       )}
     </div>

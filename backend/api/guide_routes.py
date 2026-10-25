@@ -332,13 +332,19 @@ def _llm_status() -> dict:
         source = "environment"
     elif s.anthropic_api_key:
         source = ".env file"
+    from backend.core import budget
+
+    live = budget.live_enabled()
     return {
-        "provider": s.llm_provider, "model": s.llm_model, "configured": s.llm_configured,
-        "mode": "model" if s.llm_configured else "offline-rules",
+        "provider": s.llm_provider, "model": s.llm_model, "configured": s.llm_configured and live,
+        "live_ai": live,
+        "mode": "model" if s.llm_configured and live else "offline-rules",
         "key_present": bool(s.anthropic_api_key), "key_source": source,
         "env_file": str(env_file), "env_file_exists": env_file.is_file(),
         "explanation": ("Requests are interpreted and Verilog is generated and repaired by the configured model."
-                        if s.llm_configured else
+                        if s.llm_configured and live else
+                        "An API key is configured but live AI calls are off (credit protection); turn them on in the "
+                        "Security tab's AI credits panel." if s.llm_configured else
                         "No API key: a deterministic rule-based parser handles the supported phrasings and "
                         "preverified templates generate the Verilog. Automatic repair is unavailable."),
     }

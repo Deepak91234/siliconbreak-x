@@ -6,10 +6,21 @@
 
 import { useEffect, useState } from "react";
 import { errorMessage } from "../api/client";
-import { securityApi, type BenchCaseResult, type BenchRun } from "../api/security";
+import { securityApi, type BenchCaseResult, type BenchEstimate, type BenchRun } from "../api/security";
 import { Button, Card, Collapsible, Empty, ErrorNote, Pill, Select, Spinner, cx } from "../components/ui";
 import { fmtDateTime } from "../lib/format";
 import { toast } from "../lib/toast";
+import { AICredits, usd } from "./AICredits";
+
+const ARMS: Array<{ id: string; label: string; paid: boolean }> = [
+  { id: "harness", label: "Harness validity + formal", paid: false },
+  { id: "detect:rules", label: "Detection: offline rules (not AI)", paid: false },
+  { id: "detect:bitdeer", label: "Detection: Bitdeer", paid: true },
+  { id: "detect:anthropic", label: "Detection: Claude", paid: true },
+  { id: "repair:baseline:auto", label: "Repair: model, single shot (no tools)", paid: true },
+  { id: "repair:assisted:auto", label: "Repair: same model + verifier loop", paid: true },
+  { id: "repair:factory", label: "Repair: Factory Droid", paid: true },
+];
 
 const KIND_LABEL: Record<string, string> = {
   demo: "demo", research_injected: "research-injected", historical: "historical", benchmark_adapted: "adapted benchmark",
@@ -20,6 +31,11 @@ export function SiliconBench() {
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [arms, setArms] = useState<string[]>(["harness", "detect:rules"]);
+  const [est, setEst] = useState<BenchEstimate | null>(null);
+  useEffect(() => {
+    securityApi.benchEstimate({ arms }).then(setEst).catch(() => setEst(null));
+  }, [arms]);
 
   const load = async () => {
     try {
@@ -39,9 +55,21 @@ export function SiliconBench() {
   }, [run?.id, run?.status]);
 
   const start = async () => {
+    const e = est ?? await securityApi.benchEstimate({ arms });
+    if (e.paid) {
+      if (!e.live_enabled) {
+        toast("Paid arms need live AI calls on (AI credits panel below). Free arms can run now.", "info");
+        return;
+      }
+      const ok = window.confirm(`Run SiliconBench with paid arms?\n\nWorst case: ${usd(e.usd_total)} ` +
+        `(Claude ${usd(e.usd.anthropic)}, Bitdeer ${usd(e.usd.bitdeer)}), ${e.droid_sessions} Droid session(s), ` +
+        `${e.calls.anthropic + e.calls.bitdeer} model call(s) over ${e.case_ids.length} case(s).\n\n${e.note}.`);
+      if (!ok) return;
+    }
     setStarting(true);
     try {
-      const b = await securityApi.startBench({});
+      const b = await securityApi.startBench({ arms, confirm_max_usd: e.paid ? e.usd_total : undefined,
+                                               confirm_droid_sessions: e.paid ? e.droid_sessions : undefined });
       setPicked(b.id);
       await load();
     } catch (e) {
@@ -68,9 +96,28 @@ export function SiliconBench() {
               {runs.map((r) => <option key={r.id} value={r.id}>{fmtDateTime(r.created_at)} · {r.status}</option>)}
             </Select>
           )}
-          <Button variant="primary" size="sm" busy={starting} disabled={run?.status === "running"} onClick={start}>Run SiliconBench</Button>
+          <Button variant="primary" size="sm" busy={starting} disabled={run?.status === "running" || arms.length === 0} onClick={start}>
+            Run SiliconBench{est?.paid ? ` (≤ ${usd(est.usd_total)}${est.droid_sessions ? `, ${est.droid_sessions} Droid` : ""})` : ""}
+          </Button>
         </div>
+        <fieldset className="mt-3 grid gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Benchmark arms">
+          {ARMS.map((a) => (
+            <label key={a.id} className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={arms.includes(a.id)} className="accent-[rgb(var(--accent))]"
+                     onChange={(ev) => setArms((xs) => ev.target.checked ? [...xs, a.id] : xs.filter((x) => x !== a.id))} />
+              <span className={a.paid ? "text-fg" : "text-muted"}>{a.label}</span>
+              {a.paid && <span className="rounded bg-warn/15 px-1 text-2xs text-warn">paid</span>}
+            </label>
+          ))}
+        </fieldset>
+        {est?.paid && (
+          <p className="mt-2 text-2xs text-muted">
+            Worst case for this selection: {usd(est.usd_total)} (Claude {usd(est.usd.anthropic)}, Bitdeer {usd(est.usd.bitdeer)}),
+            {" "}{est.droid_sessions} Droid session(s). The credit guard still refuses any call above its caps.
+          </p>
+        )}
       </section>
+      <AICredits compact />
       {err && <ErrorNote error={err} onRetry={load} />}
       {!runs && !err && <div className="flex items-center gap-2 text-xs text-muted"><Spinner className="h-3.5 w-3.5" /> Loading…</div>}
       {runs && !run && <Empty title="No benchmark runs yet">Press “Run SiliconBench” to execute every case. Results are stored and can be compared later.</Empty>}

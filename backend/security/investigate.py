@@ -95,14 +95,19 @@ def pick_provider(preference: str | None = None, settings: Settings | None = Non
     s = settings or get_settings()
     pref = (preference or s.security_investigator or "auto").lower()
     notes = []
+    from backend.agent.llm.budgeted import BudgetedProvider
+    from backend.core import budget
+
+    if pref != "rules" and (s.bitdeer_api_key or s.anthropic_api_key) and not budget.live_enabled():
+        return "rules", None, "live AI calls are off (credit protection); turn them on in the AI credits panel"
 
     def bitdeer():
         from backend.agent.llm.bitdeer_provider import BitdeerProvider
-        return BitdeerProvider(s.bitdeer_api_key, s.bitdeer_model, base_url=s.bitdeer_base_url)
+        return BudgetedProvider(BitdeerProvider(s.bitdeer_api_key, s.bitdeer_model, base_url=s.bitdeer_base_url), "bitdeer")
 
     def claude():
         from backend.agent.llm.anthropic_provider import AnthropicProvider
-        return AnthropicProvider(s.anthropic_api_key, s.llm_model)
+        return BudgetedProvider(AnthropicProvider(s.anthropic_api_key, s.llm_model), "anthropic")
 
     if pref in ("auto", "bitdeer"):
         if s.bitdeer_api_key:

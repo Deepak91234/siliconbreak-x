@@ -229,7 +229,7 @@ def make_permission_handler(ws: Path, editable: list[str], rec: dict):
     return on_permission
 
 
-async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCallback, timeout_s: float = 900,
+async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCallback, timeout_s: float = 600,
                             settings: Settings | None = None) -> dict:
     s = settings or get_settings()
     st = droid_status(s)
@@ -237,6 +237,13 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
                            "sdk_version": st.get("sdk"), "session_id": None, "model": s.droid_model, "usage": None,
                            "duration_s": 0.0, "turns": 0, "final_text": "", "denied_actions": [], "allowed_actions": []}
     if st["state"] == "unavailable":
+        return rec
+    from backend.core import budget
+
+    try:
+        ledger_id = budget.reserve_droid_session("security-repair")
+    except budget.BudgetRefused as e:
+        rec.update(status="unavailable", reason=f"AI credit guard: {e}")
         return rec
     from droid_sdk import (AssistantMessage, Autonomy, DroidError, ErrorEvent, InteractionHandlers, Runtime, Session,
                            SessionConfig, ToolCall, ToolResult)
@@ -291,6 +298,7 @@ async def repair_with_droid(case: CaseManifest, ws: Path, *, on_event: EventCall
         rec.update(status="error", reason=f"{type(e).__name__}: {e}")
     rec["duration_s"] = round(time.monotonic() - t0, 2)
     rec["trace"] = trace_path.name if trace_path.is_file() else None
+    budget.settle_droid(ledger_id, ok=rec["status"] == "completed", usage=rec.get("usage"), model=rec.get("model"))
     return rec
 
 

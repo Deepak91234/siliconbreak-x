@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 
+from backend.core import budget
 from backend.core.config import get_settings
 from backend.security import formal as formal_mod
 from backend.security import repair as rep
@@ -93,6 +94,7 @@ async def collect(force: bool = False) -> dict:
                          "detail": hw.get("message") or hw_state or "unknown"},
             },
             "routing": {"investigator": s.security_investigator, "repair_model": s.security_repair_model},
+            "live_ai": budget.live_enabled(),
         }
         _cache, _cache_at = out, time.time()
         return out

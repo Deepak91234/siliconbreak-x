@@ -89,6 +89,40 @@ still match the verified hashes) runs:
 manager re-verifies the approval and the file hash before writing SRAM (never flash). The UI never records what the LEDs
 physically showed; that is your observation on the board.
 
+## AI credit protection
+
+Sponsor credits: Claude $50, Bitdeer $50, Factory Pro (one month; a $20 voucher is not assumed). Every paid call goes
+through `backend/core/budget.py`, including CircuitLoop's own design agent:
+
+* **Live AI is off until you turn it on** (Security tab or SiliconBench → *AI credits* → *Turn on live AI*, which
+  shows the caps and asks for confirmation). While off, keys may be present but no request is sent: investigations
+  use the offline rules (labelled not AI) and only the human reference fix can run.
+* **Worst-case reservation before each call:** input estimated at 3 characters per token (high) plus `max_tokens` at
+  the output price (thinking bills as output). Refused above **$1.00 per call**, **$15 per provider per day**, or the
+  provider total (**$40 Claude, $40 Bitdeer**, leaving $10 of each grant in reserve). In-flight reservations count.
+* **Settled with reported usage**; when a request may have been billed without usage (timeout, truncated or
+  refused output) the worst case stays on the books.
+* **Prices:** Claude Opus 5.5 $4 / $20 per MTok, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50; unknown models are
+  costed at $10 / $50. Bitdeer publishes no machine-readable per-model prices, so it is costed at a deliberately
+  high $1 / $4 (`SILICONBREAK_BITDEER_PRICE_IN/OUT` to change). Worst case per audit call: about $0.34 (Opus 5.5),
+  $0.07 (Bitdeer at the placeholder price).
+* **Factory Droid** reports credits, not dollars, and has no spend cap of its own: at most **6 sessions per day** and
+  **2 per repair**, sessions time out after 10 minutes, and reported credits are recorded. Keep *Extra Usage* off in
+  Factory's settings so nothing bills beyond the plan.
+* **Nothing spends automatically:** an audit makes one investigation call; repairs run only from the *Repair*
+  buttons (each shows its worst case and asks first); SiliconBench runs the free arms by default, and paid arms need
+  a confirmed worst-case total (the API refuses with 409 otherwise). A full paid run over the three cases is at most
+  about $2.02 plus 6 Droid sessions.
+* **Tests never spend:** an autouse fixture hides the keys, keeps live AI off and gives each test a throwaway data
+  folder; billed tests would need the `live_ai` marker and `--run-live-ai`.
+* Ledger: table `ai_usage` in the CircuitLoop database; `GET /api/ai/budget`, `POST /api/ai/live {enabled}`,
+  `POST /api/bench/estimate`.
+
+Settings (`.env`): `SILICONBREAK_LIVE_AI`, `SILICONBREAK_BUDGET_ANTHROPIC_USD`, `SILICONBREAK_BUDGET_BITDEER_USD`,
+`SILICONBREAK_BUDGET_DAILY_USD`, `SILICONBREAK_BUDGET_PER_CALL_USD`, `SILICONBREAK_DROID_SESSIONS_PER_DAY`,
+`SILICONBREAK_DROID_MAX_ATTEMPTS`, `BITDEER_MODEL` (this account offers `zai-org/GLM-5.3`, `GLM-5.3-Flash`,
+`DeepSeek-V4.1-Flash`, `DeepSeek-V4-Flash`, `Qwen3.8-27B`; configured: `zai-org/GLM-5.3`).
+
 ## Isolated Vivado (protecting the university setup)
 
 The `x64-linux` image contains only Ubuntu and libraries; Vivado 2023.2 (34 GB) lives inside the coursework bind

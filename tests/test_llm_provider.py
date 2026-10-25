@@ -33,11 +33,16 @@ def test_get_provider_none_without_key():
     assert get_provider(s) is None
 
 
-def test_get_provider_with_key_builds_anthropic_provider():
+def test_get_provider_with_key_builds_anthropic_provider(monkeypatch):
+    from backend.agent.llm.budgeted import BudgetedProvider
+    from backend.core import budget
+
     s = dataclasses.replace(get_settings(), anthropic_api_key=SECRET, llm_model="claude-opus-5-5")
+    assert get_provider(s) is None                      # live AI off (credit protection): no provider
+    monkeypatch.setattr(budget, "live_enabled", lambda: True)
     p = get_provider(s)
-    assert isinstance(p, AnthropicProvider) and isinstance(p, LLMProvider)
-    assert p.model == "claude-opus-5-5"
+    assert isinstance(p, BudgetedProvider) and isinstance(p, LLMProvider)
+    assert isinstance(p.inner, AnthropicProvider) and p.model == "claude-opus-5-5"
     assert SECRET not in repr(p)
 
 

@@ -94,12 +94,23 @@ class Settings:
     # SiliconBreak X (security). Keys stay in this process like ANTHROPIC_API_KEY.
     bitdeer_api_key: str | None = field(default=None, repr=False)
     bitdeer_base_url: str = "https://api-inference.bitdeer.ai/v1"
-    bitdeer_model: str = "deepseek-ai/DeepSeek-V4-Pro"
+    bitdeer_model: str = "zai-org/GLM-5.3"
     factory_api_key: str | None = field(default=None, repr=False)
     droid_bin: str | None = None
     droid_model: str | None = None
     security_investigator: str = "auto"   # auto | bitdeer | anthropic | rules
     security_repair_model: str = "auto"   # auto | bitdeer | anthropic (model-patch repairs)
+
+    # AI credit protection (backend/core/budget.py). Live calls are off until enabled.
+    siliconbreak_live_ai: bool = False
+    budget_anthropic_usd: float = 40.0    # of a $50 grant: $10 kept in reserve
+    budget_bitdeer_usd: float = 40.0
+    budget_daily_usd: float = 15.0        # per provider
+    budget_per_call_usd: float = 1.0
+    bitdeer_price_in: float = 1.0         # USD / 1M tokens; deliberately high placeholders
+    bitdeer_price_out: float = 4.0
+    droid_sessions_per_day: int = 6
+    droid_max_attempts: int = 2
 
     @property
     def vivado_workspace_host(self) -> Path:
@@ -180,11 +191,20 @@ def get_settings() -> Settings:
         vivado_cpus=get("CIRCUITLOOP_VIVADO_CPUS", "3"),
         bitdeer_api_key=env.get("BITDEER_API_KEY") or None,
         bitdeer_base_url=get("BITDEER_BASE_URL", "https://api-inference.bitdeer.ai/v1").rstrip("/"),
-        bitdeer_model=get("BITDEER_MODEL", "deepseek-ai/DeepSeek-V4-Pro"),
+        bitdeer_model=get("BITDEER_MODEL", "zai-org/GLM-5.3"),
         factory_api_key=env.get("FACTORY_API_KEY") or None,
         droid_bin=env.get("SILICONBREAK_DROID") or _which("droid", str(HOME / ".local" / "bin"), str(HOME / ".factory" / "bin"),
                                                         "/opt/homebrew/bin", "/usr/local/bin"),
         droid_model=env.get("SILICONBREAK_DROID_MODEL") or None,
         security_investigator=get("SILICONBREAK_INVESTIGATOR", "auto"),
         security_repair_model=get("SILICONBREAK_REPAIR_MODEL", "auto"),
+        siliconbreak_live_ai=get("SILICONBREAK_LIVE_AI", "off").strip().lower() in ("1", "on", "true", "yes"),
+        budget_anthropic_usd=float(get("SILICONBREAK_BUDGET_ANTHROPIC_USD", "40")),
+        budget_bitdeer_usd=float(get("SILICONBREAK_BUDGET_BITDEER_USD", "40")),
+        budget_daily_usd=float(get("SILICONBREAK_BUDGET_DAILY_USD", "15")),
+        budget_per_call_usd=float(get("SILICONBREAK_BUDGET_PER_CALL_USD", "1.0")),
+        bitdeer_price_in=float(get("SILICONBREAK_BITDEER_PRICE_IN", "1.0")),
+        bitdeer_price_out=float(get("SILICONBREAK_BITDEER_PRICE_OUT", "4.0")),
+        droid_sessions_per_day=int(get("SILICONBREAK_DROID_SESSIONS_PER_DAY", "6")),
+        droid_max_attempts=int(get("SILICONBREAK_DROID_MAX_ATTEMPTS", "2")),
     )

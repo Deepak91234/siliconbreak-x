@@ -139,7 +139,11 @@ async def test_llm_status_never_exposes_key(client, monkeypatch):
     assert s["mode"] == "offline-rules" and s["configured"] is False
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-secret-value")
     s = (await client.post("/api/llm/reload")).json()
-    assert s["mode"] == "model" and s["key_present"] and s["key_source"] == "environment"
+    # credit protection: a key alone does not enable billed calls
+    assert s["mode"] == "offline-rules" and s["key_present"] and s["key_source"] == "environment" and not s["live_ai"]
+    await client.post("/api/ai/live", json={"enabled": True})
+    s = (await client.get("/api/llm")).json()
+    assert s["mode"] == "model" and s["live_ai"]
     assert "sk-ant" not in str(s)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     assert (await client.post("/api/llm/reload")).json()["mode"] == "offline-rules"

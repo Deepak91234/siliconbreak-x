@@ -33,7 +33,7 @@ class AuditRequest(BaseModel):
     project_id: Optional[str] = None
     revision_id: Optional[str] = None
     investigator: Optional[Literal["auto", "bitdeer", "anthropic", "rules"]] = None
-    repair_agent: Literal["auto", "factory", "model", "reference", "none"] = "auto"
+    repair_agent: Literal["auto", "factory", "model", "reference", "none"] = "none"
     max_attempts: Optional[int] = None
 
 
@@ -47,6 +47,12 @@ class BenchRequest(BaseModel):
     case_ids: Optional[list[str]] = None
     arms: Optional[list[str]] = None
     max_attempts: int = 3
+    confirm_max_usd: Optional[float] = None       # required when paid arms are selected
+    confirm_droid_sessions: Optional[int] = None
+
+
+class LiveRequest(BaseModel):
+    enabled: bool
 
 
 class RepairRequest(BaseModel):
@@ -268,14 +274,47 @@ async def bench_cases() -> list[dict]:
     return [c.public_view() | {"arms": ARM_LABELS} for c in list_cases()]
 
 
+@router.post("/bench/estimate")
+async def bench_estimate(req: BenchRequest) -> dict:
+    from backend.security import bench
+
+    try:
+        return bench.estimate(req.case_ids, req.arms, req.max_attempts)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/bench/runs")
 async def start_bench(req: BenchRequest) -> dict:
     from backend.security import bench
 
     try:
-        return bench.start(req.case_ids, req.arms, req.max_attempts)
+        return bench.start(req.case_ids, req.arms, req.max_attempts, confirm_max_usd=req.confirm_max_usd,
+                           confirm_droid_sessions=req.confirm_droid_sessions)
+    except bench.ConfirmationRequired as e:
+        raise HTTPException(409, {"message": str(e), "estimate": e.estimate})
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+# ------------------------------------------------------------ AI credit guard
+
+@router.get("/ai/budget")
+async def ai_budget() -> dict:
+    from backend.core import budget
+
+    return budget.summary()
+
+
+@router.post("/ai/live")
+async def ai_live(req: LiveRequest) -> dict:
+    """Turn live (billed) AI calls on or off. Only the browser UI or a local script can call this."""
+    from backend.api import environment
+    from backend.core import budget
+
+    out = budget.set_live(req.enabled)
+    await environment.collect(force=True)  # pushes environment.updated so the AI-mode chip follows the switch
+    return out
 
 
 @router.get("/bench/runs")

@@ -38,8 +38,11 @@ from backend.storage.db import now
 
 log = logging.getLogger("siliconbreak.bench")
 
-DEFAULT_ARMS = ["harness", "detect:rules", "detect:bitdeer", "detect:anthropic",
-                "repair:baseline:auto", "repair:assisted:auto", "repair:factory"]
+# Free arms run by default; paid arms must be requested explicitly and their worst-case
+# cost confirmed (see estimate()); the credit guard still applies to every call.
+DEFAULT_ARMS = ["harness", "detect:rules"]
+PAID_ARMS = ["detect:bitdeer", "detect:anthropic", "repair:baseline:auto", "repair:assisted:auto", "repair:factory"]
+ALL_ARMS = DEFAULT_ARMS + PAID_ARMS
 ARM_LABELS = {
     "harness": "Harness validity (vulnerable fails, reference passes)",
     "detect:rules": "Detection: offline static rules (not AI)",
@@ -222,13 +225,63 @@ async def run_bench(bench_id: str) -> None:
     await bus.emit("bench.updated", bench=store.get_bench_run(bench_id))
 
 
-def start(case_ids: list[str] | None, arms: list[str] | None, max_attempts: int = 3) -> dict:
+class ConfirmationRequired(Exception):
+    def __init__(self, estimate: dict):
+        super().__init__("paid arms selected: confirm the worst-case cost")
+        self.estimate = estimate
+
+
+def _resolve(case_ids: list[str] | None, arms: list[str] | None, max_attempts: int) -> tuple[list[str], list[str], int]:
     known = [c.case_id for c in list_cases()]
     ids = [c for c in (case_ids or known) if c in known]
     if not ids:
         raise ValueError("no known cases selected")
-    arms = [a for a in (arms or DEFAULT_ARMS) if a in ARM_LABELS]
-    b = store.create_bench_run({"case_ids": ids, "arms": arms, "max_attempts": max(1, min(max_attempts, 5))})
+    return ids, [a for a in (arms or DEFAULT_ARMS) if a in ARM_LABELS], max(1, min(max_attempts, 5))
+
+
+def estimate(case_ids: list[str] | None, arms: list[str] | None, max_attempts: int = 3) -> dict:
+    """Worst-case spend of a bench run, per provider (every call at max tokens, every attempt used)."""
+    from backend.core import budget
+    from backend.core.config import get_settings
+
+    s = get_settings()
+    ids, arms, attempts = _resolve(case_ids, arms, max_attempts)
+    usd = {"anthropic": 0.0, "bitdeer": 0.0}
+    calls = {"anthropic": 0, "bitdeer": 0}
+    sessions = 0
+    repair_provider = "bitdeer" if s.bitdeer_api_key else ("anthropic" if s.anthropic_api_key else None)
+    for cid in ids:
+        case = get_case(cid)
+        chars = sum(len(case.path(r).read_text()) for r in case.editable) + 9000  # + contract, task, schema
+        for arm in arms:
+            if arm.startswith("detect:") and arm != "detect:rules":
+                prov = arm.split(":", 1)[1]
+                model = s.llm_model if prov == "anthropic" else s.bitdeer_model
+                usd[prov] += budget.estimate_call(prov, model, chars, 16000)
+                calls[prov] += 1
+            elif arm in ("repair:baseline:auto", "repair:assisted:auto") and repair_provider:
+                n = 1 if "baseline" in arm else attempts
+                model = s.llm_model if repair_provider == "anthropic" else s.bitdeer_model
+                usd[repair_provider] += n * budget.estimate_call(repair_provider, model, chars, 16000)
+                calls[repair_provider] += n
+            elif arm == "repair:factory":
+                sessions += min(attempts, s.droid_max_attempts)
+    return {"case_ids": ids, "arms": arms, "max_attempts": attempts,
+            "usd": {k: round(v, 4) for k, v in usd.items()}, "usd_total": round(sum(usd.values()), 4),
+            "calls": calls, "droid_sessions": sessions,
+            "paid": any(a in PAID_ARMS for a in arms), "live_enabled": budget.live_enabled(),
+            "note": "worst case: every call at max tokens and every repair attempt used; Bitdeer prices are high placeholders"}
+
+
+def start(case_ids: list[str] | None, arms: list[str] | None, max_attempts: int = 3, *,
+          confirm_max_usd: float | None = None, confirm_droid_sessions: int | None = None) -> dict:
+    est = estimate(case_ids, arms, max_attempts)
+    ids, arms, attempts = est["case_ids"], est["arms"], est["max_attempts"]
+    if est["paid"]:
+        if (confirm_max_usd is None or confirm_max_usd + 1e-9 < est["usd_total"]
+                or (est["droid_sessions"] and (confirm_droid_sessions or 0) < est["droid_sessions"])):
+            raise ConfirmationRequired(est)
+    b = store.create_bench_run({"case_ids": ids, "arms": arms, "max_attempts": attempts, "estimate": est})
     _tasks[b["id"]] = asyncio.create_task(run_bench(b["id"]))
     _tasks[b["id"]].add_done_callback(lambda _t, k=b["id"]: _tasks.pop(k, None))
     return b

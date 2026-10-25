@@ -24,6 +24,7 @@ import { useResource } from "../lib/useResource";
 import { useAppState, useStore } from "../store/store";
 import { DiffView, type DiffMode } from "../tabs/DiffView";
 import { CurrentAction } from "../workspace/Timeline";
+import { AICredits, usd, useBudget } from "./AICredits";
 import { HardwareDemo } from "./HardwareDemo";
 import { ProviderStatus } from "./ProviderStatus";
 import { RepoImport } from "./RepoImport";
@@ -109,6 +110,7 @@ export function SecurityStart({ compact = false }: { compact?: boolean }) {
           </div>
         ))}
       </div>
+      {!compact && <AICredits />}
       {!compact && <ProjectAudit />}
       {!compact && <RepoImport />}
       {!compact && <ProviderStatus />}
@@ -150,6 +152,24 @@ function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: 
   const rs = runStatus(audit.status);
   const c = audit.record.case;
   const canRepair = !running && !!audit.record.reproduction && audit.record.reproduction.security_status === "failed";
+  const budget = useBudget(audit.record.repairs.length);
+  const confirmSpend = (agent: "factory" | "model"): boolean => {
+    const bd = budget.data;
+    if (!bd) return true;
+    if (!bd.live_enabled) {
+      toast("Live AI calls are off. Turn them on in the AI credits panel first.", "info");
+      return false;
+    }
+    if (agent === "factory") {
+      const f = bd.providers.factory;
+      return window.confirm(`Repair with Factory Droid?\n\nUses up to ${f.max_attempts_per_repair} Droid session(s) ` +
+        `(${f.sessions_today}/${f.cap_sessions_per_day} used today). Droid edits an isolated copy only.`);
+    }
+    const p = bd.providers.bitdeer.configured ? bd.providers.bitdeer : bd.providers.anthropic;
+    const n = 3;
+    return window.confirm(`Repair with a model patch (${p.model})?\n\nWorst case: ${n} attempts x ${usd(p.worst_case_per_call_usd)} = ` +
+      `${usd(n * p.worst_case_per_call_usd)}. Used so far: ${usd(p.used_usd)} of ${usd(p.cap_total_usd)}.`);
+  };
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
     try {
@@ -193,12 +213,12 @@ function AuditHeader({ audit, audits, onPick }: { audit: SecurityAudit; audits: 
         {audit.case_id && <>
         <Button size="sm" variant="primary" disabled={!canRepair} busy={busy === "factory"}
                 title="Factory Droid edits an isolated copy; the trusted verifier judges the patch"
-                onClick={() => act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
+                onClick={() => confirmSpend("factory") && act("factory", () => securityApi.repair(audit.id, "factory").then((r) => store.putAudit(r.audit)))}>
           Repair with Factory Droid
         </Button>
         <Button size="sm" variant="secondary" disabled={!canRepair} busy={busy === "model"}
                 title="A model provider (Bitdeer or Claude) proposes a full-file patch"
-                onClick={() => act("model", () => securityApi.repair(audit.id, "model").then((r) => store.putAudit(r.audit)))}>
+                onClick={() => confirmSpend("model") && act("model", () => securityApi.repair(audit.id, "model").then((r) => store.putAudit(r.audit)))}>
           Repair with model
         </Button>
         <Button size="sm" variant="ghost" disabled={!canRepair || !c.has_reference_fix} busy={busy === "reference"}
@@ -245,6 +265,7 @@ function AuditBody({ audit }: { audit: SecurityAudit }) {
       )}
       {audit.case_id && c.board && <HardwareDemo audit={audit} />}
       <EvidenceCard audit={audit} />
+      <AICredits />
       <ProviderStatus />
       <Card title="Limitations">
         <ul className="list-disc space-y-1 pl-4 text-xs text-muted">

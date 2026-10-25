@@ -126,6 +126,27 @@ CREATE TABLE IF NOT EXISTS bench_runs (
     created_at REAL NOT NULL,
     finished_at REAL
 );
+-- AI credit protection ledger (backend/core/budget.py) and small app settings.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id TEXT PRIMARY KEY,
+    ts REAL NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT,
+    purpose TEXT,
+    status TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    max_cost_usd REAL,
+    cost_usd REAL,
+    run_id TEXT,
+    detail_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS ix_ai_usage_provider ON ai_usage(provider, ts);
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS vision_sessions (
     id TEXT PRIMARY KEY,
     revision_id TEXT NOT NULL,
@@ -142,7 +163,7 @@ JSON_COLUMNS = {
     "spec_json", "requirements_json", "observations_json", "files_json", "safety_json",
     "change_summary_json", "simulation_json", "build_json", "verification_json",
     "revision_ids_json", "stages_json", "options_json", "data_json", "details_json", "result_json",
-    "record_json", "config_json",
+    "record_json", "config_json", "detail_json", "value_json",
 }
 
 

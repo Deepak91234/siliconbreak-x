@@ -257,7 +257,11 @@ def test_droid_unavailable_is_reported(monkeypatch):
 def test_auto_repair_uses_droid_only_when_configured(monkeypatch):
     from backend.security import orchestrator as orch
 
+    from backend.core import budget
+
     so = orch.SecurityOrchestrator()
+    assert so._choose_agent("factory")[0] is None                # live AI off: nothing paid runs, even on request
+    monkeypatch.setattr(budget, "live_enabled", lambda: True)
     monkeypatch.setattr(orch.rep, "droid_status", lambda *a: {"state": "unverified", "reason": "no key", "sdk": "x", "cli": "/d"})
     monkeypatch.setattr(orch.inv, "pick_provider", lambda *a, **k: ("rules", None, "no model"))
     assert so._choose_agent("auto")[0] is None            # logged-in CLI alone: not used automatically
@@ -344,7 +348,7 @@ async def test_audit_pipeline_without_keys_then_model_repair(client, monkeypatch
     run = (await c.get(f"/api/runs/{rid}")).json()
     st = {s["key"]: s["status"] for s in run["stages"]}
     assert st == {"contract": "passed", "index": "passed", "investigate": "passed", "reproduce": "failed",
-                  "formal": "failed", "repair": "unavailable", "retest": "skipped", "evidence": "passed"}
+                  "formal": "failed", "repair": "skipped", "retest": "skipped", "evidence": "passed"}
     assert a["status"] == "reproduced" and run["status"] == "reproduced"
     rec = a["record"]
     assert rec["providers"]["investigator"]["provider"] == "rules" and rec["providers"]["investigator"]["is_ai"] is False

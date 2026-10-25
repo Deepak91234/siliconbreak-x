@@ -26,6 +26,11 @@ def get_provider(settings: Settings | None = None) -> LLMProvider | None:
         return None
     if not s.anthropic_api_key:
         return None
-    from .anthropic_provider import AnthropicProvider
+    from backend.core import budget
 
-    return AnthropicProvider(s.anthropic_api_key, s.llm_model)
+    if not budget.live_enabled():  # credit protection: no paid calls until the user turns live AI on
+        return None
+    from .anthropic_provider import AnthropicProvider
+    from .budgeted import BudgetedProvider
+
+    return BudgetedProvider(AnthropicProvider(s.anthropic_api_key, s.llm_model), "anthropic")

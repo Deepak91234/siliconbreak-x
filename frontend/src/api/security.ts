@@ -225,6 +225,30 @@ export interface RepoIndex {
 
 export type RepoSummary = Pick<RepoIndex, "repo_id" | "url" | "owner" | "name" | "ref" | "sha" | "subdir" | "imported_at" | "totals" | "truncated">;
 
+export interface AIProviderBudget {
+  configured: boolean; model: string; price_in_per_mtok: number; price_out_per_mtok: number; prices_are_estimates: boolean;
+  cap_total_usd: number; cap_daily_usd: number; cap_per_call_usd: number; used_usd: number; used_today_usd: number;
+  calls: number; worst_case_per_call_usd: number;
+}
+
+export interface AIBudget {
+  live_enabled: boolean;
+  providers: {
+    anthropic: AIProviderBudget;
+    bitdeer: AIProviderBudget;
+    factory: { configured: boolean; model: string; sessions_today: number; cap_sessions_per_day: number;
+               max_attempts_per_repair: number; credits_reported_total: number | null; sessions_total: number };
+  };
+  recent: Array<{ ts: number; provider: string; model: string | null; purpose: string; status: string; cost_usd: number | null;
+                  max_cost_usd: number | null; input_tokens: number | null; output_tokens: number | null;
+                  detail: { reason?: string; error_kind?: string; factory_credits?: number } | null }>;
+}
+
+export interface BenchEstimate {
+  case_ids: string[]; arms: string[]; max_attempts: number; usd: { anthropic: number; bitdeer: number }; usd_total: number;
+  calls: { anthropic: number; bitdeer: number }; droid_sessions: number; paid: boolean; live_enabled: boolean; note: string;
+}
+
 export interface HealthItem { name?: string; role?: string; state: string; detail: string; model?: string }
 export interface SecurityHealth {
   checked_at: number;
@@ -301,8 +325,12 @@ export const securityApi = {
     request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/build`, { method: "POST" }),
   fpgaProgram: (id: string, variant: string) =>
     request<{ run: { id: string } }>(`/api/security/audits/${enc(id)}/fpga/${enc(variant)}/program`, { method: "POST" }),
+  aiBudget: () => request<AIBudget>("/api/ai/budget"),
+  setLiveAI: (enabled: boolean) => request<AIBudget>("/api/ai/live", { method: "POST", body: { enabled } }),
+  benchEstimate: (body: { case_ids?: string[]; arms?: string[]; max_attempts?: number }) =>
+    request<BenchEstimate>("/api/bench/estimate", { method: "POST", body }),
   benchRuns: () => request<BenchRun[]>("/api/bench/runs"),
   benchRun: (id: string) => request<BenchRun>(`/api/bench/runs/${enc(id)}`),
-  startBench: (body: { case_ids?: string[]; arms?: string[] }) =>
+  startBench: (body: { case_ids?: string[]; arms?: string[]; confirm_max_usd?: number; confirm_droid_sessions?: number }) =>
     request<BenchRun>("/api/bench/runs", { method: "POST", body, timeoutMs: 60_000 }),
 };
